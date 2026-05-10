@@ -147,15 +147,8 @@ public:
             long long ka = k[a];
             long long kb = k[b];
 
-            /*
-                Compare:
-                    Pa / ka > Pb / kb
-
-                Instead of using floating point, compare:
-                    Pa * kb > Pb * ka
-            */
-            long double left = static_cast<long double>(Pa) * kb;
-            long double right = static_cast<long double>(Pb) * ka;
+            long double left = static_cast<long double>(Pa) * static_cast<long double>(kb);
+            long double right = static_cast<long double>(Pb) * static_cast<long double>(ka);
 
             if (left != right) {
                 return left > right;
@@ -213,7 +206,7 @@ public:
                     }
 
                     if (compatibleSlots[j].find(slotId) != compatibleSlots[j].end()) {
-                        harm += static_cast<long double>(penalty[j]) / k[j];
+                        harm += static_cast<long double>(penalty[j]) / static_cast<long double>(k[j]);
                         claimants++;
                     }
                 }
@@ -328,7 +321,7 @@ public:
     }
 
     long long getStarvation(const string& fellowId) const {
-        auto it = starvation.find(fellowId);
+        unordered_map<string, long long>::const_iterator it = starvation.find(fellowId);
 
         if (it == starvation.end()) {
             return 0;
@@ -338,119 +331,324 @@ public:
     }
 };
 
-int main() {
-    ios::sync_with_stdio(false);
-    cin.tie(nullptr);
+struct TestRunner {
+    int passed = 0;
+    int failed = 0;
 
-    int F, M, T;
-    cin >> F >> M >> T;
-
-    vector<string> fellowIds(F);
-
-    for (int i = 0; i < F; i++) {
-        cin >> fellowIds[i];
+    void expect(bool condition, const string& message) {
+        if (condition) {
+            passed++;
+            cout << "[PASS] " << message << "\n";
+        } else {
+            failed++;
+            cout << "[FAIL] " << message << "\n";
+        }
     }
 
+    void summary() const {
+        cout << "\n==============================\n";
+        cout << "Tests passed: " << passed << "\n";
+        cout << "Tests failed: " << failed << "\n";
+        cout << "==============================\n";
+    }
+};
+
+Mentor makeMentor(const string& id, const vector<string>& topics) {
+    Mentor mentor;
+    mentor.id = id;
+
+    for (const string& topic : topics) {
+        mentor.specialties.insert(topic);
+    }
+
+    return mentor;
+}
+
+Slot makeSlot(const string& id, const string& mentorId, const string& timeBlock) {
+    Slot slot;
+    slot.id = id;
+    slot.mentorId = mentorId;
+    slot.timeBlock = timeBlock;
+
+    return slot;
+}
+
+Request makeRequest(
+    const string& fellowId,
+    const vector<string>& availableSlots,
+    const string& topic,
+    const string& urgency,
+    long long timestamp
+) {
+    Request request;
+    request.fellowId = fellowId;
+    request.availableSlotIds = availableSlots;
+    request.requestedTopic = topic;
+    request.urgency = urgency;
+    request.timestamp = timestamp;
+
+    return request;
+}
+
+unordered_map<string, Mentor> makeMentors(const vector<Mentor>& mentorList) {
     unordered_map<string, Mentor> mentors;
 
-    for (int i = 0; i < M; i++) {
-        string mentorId;
-        int K;
-
-        cin >> mentorId >> K;
-
-        Mentor mentor;
-        mentor.id = mentorId;
-
-        for (int j = 0; j < K; j++) {
-            string topic;
-            cin >> topic;
-            mentor.specialties.insert(topic);
-        }
-
-        mentors[mentorId] = mentor;
+    for (const Mentor& mentor : mentorList) {
+        mentors[mentor.id] = mentor;
     }
 
-    ScarcityAwareGreedySolver solver(fellowIds, mentors);
+    return mentors;
+}
 
-    long long totalPenalty = 0;
+bool hasAssignment(const WeeklyResult& result, const string& fellowId) {
+    return result.assignment.find(fellowId) != result.assignment.end();
+}
 
-    for (int week = 1; week <= T; week++) {
-        int S;
-        cin >> S;
+string assignmentOf(const WeeklyResult& result, const string& fellowId) {
+    unordered_map<string, string>::const_iterator it = result.assignment.find(fellowId);
 
-        vector<Slot> slots(S);
-
-        for (int i = 0; i < S; i++) {
-            cin >> slots[i].id >> slots[i].mentorId >> slots[i].timeBlock;
-        }
-
-        int R;
-        cin >> R;
-
-        vector<Request> requests(R);
-
-        for (int i = 0; i < R; i++) {
-            int A;
-            cin >> requests[i].fellowId >> A;
-
-            requests[i].availableSlotIds.resize(A);
-
-            for (int j = 0; j < A; j++) {
-                cin >> requests[i].availableSlotIds[j];
-            }
-
-            cin >> requests[i].requestedTopic
-                >> requests[i].urgency
-                >> requests[i].timestamp;
-        }
-
-        WeeklyResult result = solver.solveWeek(slots, requests);
-
-        totalPenalty += result.weeklyPenalty;
-
-        cout << "Week " << week << "\n";
-
-        cout << "Assignments:\n";
-
-        if (result.assignment.empty()) {
-            cout << "None\n";
-        } else {
-            vector<pair<string, string>> assignments(
-                result.assignment.begin(),
-                result.assignment.end()
-            );
-
-            sort(assignments.begin(), assignments.end());
-
-            for (const pair<string, string>& assignment : assignments) {
-                cout << assignment.first << " -> " << assignment.second << "\n";
-            }
-        }
-
-        cout << "Unserved:\n";
-
-        if (result.classification.empty()) {
-            cout << "None\n";
-        } else {
-            vector<pair<string, string>> unserved(
-                result.classification.begin(),
-                result.classification.end()
-            );
-
-            sort(unserved.begin(), unserved.end());
-
-            for (const pair<string, string>& item : unserved) {
-                cout << item.first << " : " << item.second << "\n";
-            }
-        }
-
-        cout << "Penalty_week = " << result.weeklyPenalty << "\n";
-        cout << "Penalty_total_so_far = " << totalPenalty << "\n";
-        cout << "\n";
+    if (it == result.assignment.end()) {
+        return "";
     }
 
-    cout << "Final Penalty_total = " << totalPenalty << "\n";
+    return it->second;
+}
 
+string classificationOf(const WeeklyResult& result, const string& fellowId) {
+    unordered_map<string, string>::const_iterator it = result.classification.find(fellowId);
+
+    if (it == result.classification.end()) {
+        return "";
+    }
+
+    return it->second;
+}
+
+bool hasNoAlgorithmFailure(const WeeklyResult& result) {
+    for (
+        unordered_map<string, string>::const_iterator it = result.classification.begin();
+        it != result.classification.end();
+        ++it
+    ) {
+        if (it->second == "algorithm_failure") {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void testAllFeasibleAssigned(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"}),
+        makeMentor("M2", vector<string>{"ai"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2"}, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M2", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "cpp", "blocker", 10));
+    requests.push_back(makeRequest("F2", vector<string>{"S2"}, "ai", "normal", 20));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(assignmentOf(result, "F1") == "S1", "all feasible: F1 gets S1");
+    test.expect(assignmentOf(result, "F2") == "S2", "all feasible: F2 gets S2");
+    test.expect(result.classification.empty(), "all feasible: no unserved fellows");
+    test.expect(result.weeklyPenalty == 0, "all feasible: weekly penalty is 0");
+    test.expect(solver.getStarvation("F1") == 0, "all feasible: F1 starvation resets to 0");
+    test.expect(solver.getStarvation("F2") == 0, "all feasible: F2 starvation resets to 0");
+}
+
+void testInfeasibleRequests(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"}),
+        makeMentor("M2", vector<string>{"ai"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2", "F3"}, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M2", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "ai", "normal", 10));
+    requests.push_back(makeRequest("F2", vector<string>{"Missing"}, "cpp", "blocker", 20));
+    requests.push_back(makeRequest("F3", vector<string>{"S1"}, "security", "exploratory", 30));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(result.assignment.empty(), "infeasible: no assignments are produced");
+    test.expect(classificationOf(result, "F1") == "infeasibly_unserved", "infeasible: F1 topic mismatch classified correctly");
+    test.expect(classificationOf(result, "F2") == "infeasibly_unserved", "infeasible: F2 missing slot classified correctly");
+    test.expect(classificationOf(result, "F3") == "infeasibly_unserved", "infeasible: F3 uncovered topic classified correctly");
+    test.expect(result.weeklyPenalty == 6, "infeasible: penalty is 2 + 3 + 1 = 6");
+    test.expect(hasNoAlgorithmFailure(result), "infeasible: no algorithm failure is reported");
+}
+
+void testTopicBottleneckCapacity(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2", "F3"}, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M1", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("F1", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
+    requests.push_back(makeRequest("F2", vector<string>{"S1", "S2"}, "cpp", "normal", 20));
+    requests.push_back(makeRequest("F3", vector<string>{"S1", "S2"}, "cpp", "exploratory", 30));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(hasAssignment(result, "F1"), "bottleneck: highest penalty fellow F1 is assigned");
+    test.expect(hasAssignment(result, "F2"), "bottleneck: second-highest penalty fellow F2 is assigned");
+    test.expect(!hasAssignment(result, "F3"), "bottleneck: lowest penalty fellow F3 is unassigned");
+    test.expect(classificationOf(result, "F3") == "competitively_unserved", "bottleneck: F3 is competitively unserved");
+    test.expect(result.weeklyPenalty == 1, "bottleneck: penalty is only F3's skipped penalty = 1");
+    test.expect(hasNoAlgorithmFailure(result), "bottleneck: no algorithm failure is reported");
+}
+
+void testStarvationRescueBeatsUrgency(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"A", "B"}, mentors);
+
+    vector<Slot> prepSlots;
+    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
+
+    vector<Request> prepRequests;
+    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "blocker", 1));
+
+    solver.solveWeek(prepSlots, prepRequests);
+    solver.solveWeek(prepSlots, prepRequests);
+    solver.solveWeek(prepSlots, prepRequests);
+
+    test.expect(solver.getStarvation("A") == 3, "starvation rescue setup: A has starvation 3");
+    test.expect(solver.getStarvation("B") == 0, "starvation rescue setup: B has starvation 0");
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("A", vector<string>{"S1"}, "cpp", "exploratory", 20));
+    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "blocker", 10));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(assignmentOf(result, "A") == "S1", "starvation rescue: starved exploratory A beats blocker B");
+    test.expect(classificationOf(result, "B") == "competitively_unserved", "starvation rescue: B is competitively unserved");
+    test.expect(result.weeklyPenalty == 3, "starvation rescue: penalty is B's skipped blocker penalty = 3");
+    test.expect(solver.getStarvation("A") == 0, "starvation rescue: A starvation resets");
+    test.expect(solver.getStarvation("B") == 1, "starvation rescue: B starvation increments");
+}
+
+void testLeastDamagingSlotChoice(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"A", "B"}, mentors);
+
+    vector<Slot> prepSlots;
+    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
+
+    vector<Request> prepRequests;
+    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "normal", 1));
+
+    solver.solveWeek(prepSlots, prepRequests);
+    solver.solveWeek(prepSlots, prepRequests);
+
+    test.expect(solver.getStarvation("A") == 2, "least damaging setup: A has starvation 2");
+    test.expect(solver.getStarvation("B") == 0, "least damaging setup: B has starvation 0");
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M1", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("A", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
+    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "normal", 20));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(assignmentOf(result, "A") == "S2", "least damaging: A avoids B's only slot and takes S2");
+    test.expect(assignmentOf(result, "B") == "S1", "least damaging: B still gets its only slot S1");
+    test.expect(result.weeklyPenalty == 0, "least damaging: both fellows assigned, penalty 0");
+    test.expect(hasNoAlgorithmFailure(result), "least damaging: no algorithm failure is reported");
+}
+
+void testTimestampTieBreaker(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"Early", "Late"}, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("Late", vector<string>{"S1"}, "cpp", "normal", 20));
+    requests.push_back(makeRequest("Early", vector<string>{"S1"}, "cpp", "normal", 10));
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(assignmentOf(result, "Early") == "S1", "tie breaker: earlier timestamp wins");
+    test.expect(classificationOf(result, "Late") == "competitively_unserved", "tie breaker: later timestamp is competitively unserved");
+    test.expect(result.weeklyPenalty == 2, "tie breaker: skipped normal fellow penalty is 2");
+}
+
+void testNoRequestsWeek(TestRunner& test) {
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2"}, mentors);
+
+    vector<Slot> slots;
+    vector<Request> requests;
+
+    WeeklyResult result = solver.solveWeek(slots, requests);
+
+    test.expect(result.assignment.empty(), "no requests: no assignments");
+    test.expect(result.classification.empty(), "no requests: no unserved request classifications");
+    test.expect(result.weeklyPenalty == 0, "no requests: weekly penalty is 0");
+    test.expect(solver.getStarvation("F1") == 1, "no requests: F1 starvation increments because not assigned");
+    test.expect(solver.getStarvation("F2") == 1, "no requests: F2 starvation increments because not assigned");
+}
+
+void runAllTests() {
+    TestRunner test;
+
+    testAllFeasibleAssigned(test);
+    testInfeasibleRequests(test);
+    testTopicBottleneckCapacity(test);
+    testStarvationRescueBeatsUrgency(test);
+    testLeastDamagingSlotChoice(test);
+    testTimestampTieBreaker(test);
+    testNoRequestsWeek(test);
+
+    test.summary();
+
+    if (test.failed == 0) {
+        cout << "All self-checking tests passed.\n";
+    } else {
+        cout << "Some tests failed. Review the failed cases above.\n";
+    }
+}
+
+int main() {
+    runAllTests();
     return 0;
 }
