@@ -12,7 +12,6 @@ using namespace std;
 typedef long long ll;
 
 void precompute(
-  vector<Fellow> fellows,
   vector<Mentor> mentors,
   vector<Slot> slots,
   vector<Request> requests,
@@ -22,7 +21,6 @@ void precompute(
 ) {
 
   // Getting the sizes of fellows, mentors, slots, and requests for easier reference
-  int f = int(fellows.size());
   int m = int(mentors.size());
   int s = int(slots.size());
   int r = int(requests.size());
@@ -77,7 +75,6 @@ void precompute(
 
 // Function to implement brute-force backtracking solution => O(S^R)
 void backtracking_solution(
-  vector<Fellow> fellows,
   vector<Mentor> mentors,
   vector<Slot> slots,
   vector<Request> requests, 
@@ -85,8 +82,6 @@ void backtracking_solution(
   ) {
 
   // Getting the sizes of fellows, mentors, slots, and requests for easier reference
-  int f = int(fellows.size());
-  int m = int(mentors.size());
   int s = int(slots.size());
   int r = int(requests.size());
 
@@ -94,7 +89,7 @@ void backtracking_solution(
   vector<vector<int>> mentor_speciality_ids;
   vector<int> request_topic_ids;
   vector<int> slot_mentor_idx;
-  precompute(fellows, mentors, slots, requests, mentor_speciality_ids, request_topic_ids, slot_mentor_idx);
+  precompute(mentors, slots, requests, mentor_speciality_ids, request_topic_ids, slot_mentor_idx);
 
   assignments.assign(r, -1);
 
@@ -185,7 +180,7 @@ void greedy_heuristic_solution() {
 int main() {
 
   // Fast input/output optimization
-  ios::sync_with_stdio(0); cin.tie(0);
+  // ios::sync_with_stdio(0); cin.tie(0);
   
   // Read the number of fellows, mentors, slots, and requests
   int F, M, S, R;
@@ -242,8 +237,10 @@ int main() {
       requests[i].urgency = BLOCKER;
     } else if (urgency_str == "normal") {
       requests[i].urgency = NORMAL;
-    } else {
+    } else if (urgency_str == "exploratory") {
       requests[i].urgency = EXPLORATORY;
+    } else {
+      throw runtime_error("Invalid urgency level: " + urgency_str);
     }
 
     // Read the week when the request was submitted
@@ -265,4 +262,70 @@ int main() {
     }
   }
 
+  vector<int> assignments;
+  backtracking_solution(mentors, slots, requests, assignments);
+
+
+  // Output the assignments
+  for(int i = 0; i < R; i++) {
+    cout << assignments[i] << "\n";
+  }
+
+  
 }
+/*
+Sample input 1:
+3 2 5 5
+0 1 2
+0 2 AI ML
+1 1 AI
+0 0
+0 1
+1 1
+1 2
+1 2
+0
+2 0 4
+AI normal 1
+1 
+2 3 4
+AI blocker 2
+2 
+1 1
+ML exploratory 1
+0 
+1 4
+AI normal 3
+1 
+1 4
+AI exploratory 2
+
+Sample input 2:
+5 3 7 2
+
+0 1 7 6 10
+
+0 2 AI ML
+1 1 AI
+4 2 CYBE NET
+
+0 0
+0 2
+1 0
+1 1
+1 2
+4 1
+4 3
+
+1
+2 0 2
+AI normal 0
+
+7
+3 0 1 5
+CYBE blocker 1
+
+
+
+
+*/
