@@ -20,6 +20,7 @@ struct Mentor {
 
 struct Slot {
   int mentor_id;
+  int mentor_idx;
   int week;
 };
 

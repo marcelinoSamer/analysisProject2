@@ -51,7 +51,7 @@ broken in the following order:
 using namespace std;
 typedef long long ll;
 
-// Function to implement brute-force backtracking solution
+// Function to implement brute-force backtracking solution => O(S^R)
 void backtracking_solution(
   vector<Fellow> fellows,
   vector<Mentor> mentors,
@@ -72,6 +72,7 @@ void backtracking_solution(
 
   // Minimum cost of an assignment
   ll min_cost = LLONG_MAX;
+  int max_assignments = 0;
 
   auto backtrack = [&](auto &&self, int idx) -> void {
     
@@ -79,13 +80,14 @@ void backtracking_solution(
     if (idx == r) {
 
       ll cost = 0;
-      vector<int> assigned(r, -1);
+      vector<int> new_assignments(r, -1);
       
       // Determine assignments and calculate the max week number among the slots
-      int mx_week = 0;
+      int mx_week = 0, assigned_count = 0;
       for (int i = 0; i < s; i++) {
         if (assigned_to[i] != -1) {
-          assigned[assigned_to[i]] = i;
+          new_assignments[assigned_to[i]] = i;
+          ++assigned_count;
         }
         mx_week = max(mx_week, slots[i].week);
       }
@@ -94,8 +96,8 @@ void backtracking_solution(
       for (int i = 0; i < r; i++) {
         int w = requests[i].urgency + 1;
 
-        if (assigned[i] != -1) {
-          int d = slots[assigned[i]].week - requests[i].week;
+        if (new_assignments[i] != -1) {
+          int d = slots[new_assignments[i]].week - requests[i].week;
           cost += 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
         } else {
           int d = mx_week - requests[i].week + 1;
@@ -103,6 +105,14 @@ void backtracking_solution(
         }
       }
 
+      if (assigned_count > max_assignments) {
+        max_assignments = assigned_count;
+        min_cost = cost;
+        assignments = new_assignments;
+      } else if (assigned_count == max_assignments && cost < min_cost) {
+        min_cost = cost;
+        assignments = new_assignments;
+      }
       return;
     }
 
@@ -119,7 +129,7 @@ void backtracking_solution(
       // Check if the slot is unassigned and if the mentor of that slot has the required specialty
       if (assigned_to[id_slot] == -1) {
         bool can_assign = false;
-        for(int topic_id : mentors[slots[id_slot].mentor_id].speciality_ids) {
+        for(int topic_id : mentors[slots[id_slot].mentor_idx].speciality_ids) {
           if (topic_id == requests[idx].requested_topic_id) {
             can_assign = true;
             break;
@@ -176,6 +186,13 @@ int main() {
   vector<Slot> slots(S);
   for(int i = 0; i < S; i++) {
     cin >> slots[i].mentor_id >> slots[i].week;
+    auto it = find_if(mentors.begin(), mentors.end(), [&](const Mentor &mentor) {
+      return mentor.id == slots[i].mentor_id;
+    });
+    if (it == mentors.end()) {
+      throw runtime_error("Mentor ID not found for slot " + to_string(i));
+    }
+    slots[i].mentor_idx = int(it - mentors.begin());
   }
 
   // Read requests
