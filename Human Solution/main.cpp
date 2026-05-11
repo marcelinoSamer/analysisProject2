@@ -57,7 +57,7 @@ void backtracking_solution(
   vector<Mentor> mentors,
   vector<Slot> slots,
   vector<Request> requests, 
-  vector<int> assignments
+  vector<int> &assignments
   ) {
 
   // Getting the sizes of fellows, mentors, slots, and requests for easier reference
@@ -73,29 +73,33 @@ void backtracking_solution(
   // Minimum cost of an assignment
   ll min_cost = LLONG_MAX;
 
-
   auto backtrack = [&](auto &&self, int idx) -> void {
     
     // Base case
     if (idx == r) {
 
-      // Calculate the cost of the current assignment
       ll cost = 0;
-      for(int i = 0; i < s; i++) {
+      vector<int> assigned(r, -1);
+      
+      // Determine assignments and calculate the max week number among the slots
+      int mx_week = 0;
+      for (int i = 0; i < s; i++) {
         if (assigned_to[i] != -1) {
-          const Request &request = requests[assigned_to[i]];
-          int s_f = (slots[i].week - request.week + 1);
-          cost += 1LL * s_f * s_f * (request.urgency + 1);
+          assigned[assigned_to[i]] = i;
         }
+        mx_week = max(mx_week, slots[i].week);
       }
 
-      // Update the minimum cost and the best assignment if the current cost is lower
-      if (cost < min_cost) {
-        min_cost = cost;
-        for(int i = 0; i < s; i++) {
-          if (assigned_to[i] != -1) {
-            assignments[assigned_to[i]] = i;
-          }
+      // Calculate the cost for each request based on whether it was assigned or not
+      for (int i = 0; i < r; i++) {
+        int w = requests[i].urgency + 1;
+
+        if (assigned[i] != -1) {
+          int d = slots[assigned[i]].week - requests[i].week;
+          cost += 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
+        } else {
+          int d = mx_week - requests[i].week + 1;
+          cost += 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
         }
       }
 
@@ -103,11 +107,29 @@ void backtracking_solution(
     }
 
     // Recursive case
+    // 1. Do not assign that request to any slot
+    self(self, idx + 1);
+    // 2. Try to assign that request to each of its available slots
     for(int id_slot : requests[idx].available_slot_ids) {
+      // Cannot assign to a slot that is in the past
+      if (requests[idx].week > slots[id_slot].week) {
+        continue;
+      }
+
+      // Check if the slot is unassigned and if the mentor of that slot has the required specialty
       if (assigned_to[id_slot] == -1) {
-        assigned_to[id_slot] = idx;
-        self(self, idx + 1);
-        assigned_to[id_slot] = -1;
+        bool can_assign = false;
+        for(int topic_id : mentors[slots[id_slot].mentor_id].speciality_ids) {
+          if (topic_id == requests[idx].requested_topic_id) {
+            can_assign = true;
+            break;
+          }
+        }
+        if (can_assign) {
+          assigned_to[id_slot] = idx;
+          self(self, idx + 1);
+          assigned_to[id_slot] = -1;
+        }
       }
     }
   }; backtrack(backtrack, 0);
@@ -219,11 +241,12 @@ int main() {
   all_topics.erase(unique(all_topics.begin(), all_topics.end()), all_topics.end());
 
   for(auto &mentor : mentors) {
-    for(auto &specialty : mentor.specialties) {
-      specialty = int(lower_bound(
+    int size = int(mentor.specialties.size());
+    for(int i = 0; i < size; i++) {
+      mentor.speciality_ids[i] = int(lower_bound(
         all_topics.begin(),
         all_topics.end(),
-        specialty
+        mentor.specialties[i]
       ) - all_topics.begin());
     }
   }
