@@ -8,6 +8,7 @@
 #include <cmath>
 #include <climits>
 #include <utility>
+#include <functional>
 
 using namespace std;
 
@@ -98,7 +99,6 @@ public:
         vector<long long> penalty(R, 0);
         vector<bool> infeasible(R, false);
         vector<bool> assigned(R, false);
-        vector<string> assignedSlot(R, "");
 
         for (int i = 0; i < R; i++) {
             const Request& req = requests[i];
@@ -271,7 +271,6 @@ public:
             }
 
             assigned[best] = true;
-            assignedSlot[best] = slotToUse;
             freeSlots.erase(slotToUse);
 
             result.assignment[requests[best].fellowId] = slotToUse;
@@ -436,6 +435,127 @@ bool hasNoAlgorithmFailure(const WeeklyResult& result) {
     }
 
     return true;
+}
+
+struct OptimalResult {
+    long long minPenalty = 0;
+    unordered_map<string, string> assignment;
+};
+
+unordered_map<string, long long> snapshotStarvation(
+    const ScarcityAwareGreedySolver& solver,
+    const vector<string>& fellowIds
+) {
+    unordered_map<string, long long> starvationMap;
+
+    for (const string& fellowId : fellowIds) {
+        starvationMap[fellowId] = solver.getStarvation(fellowId);
+    }
+
+    return starvationMap;
+}
+
+OptimalResult exactOptimalForSmallWeek(
+    const vector<Slot>& slots,
+    const vector<Request>& requests,
+    const unordered_map<string, Mentor>& mentors,
+    const unordered_map<string, long long>& starvation
+) {
+    OptimalResult optimal;
+
+    unordered_map<string, Slot> slotById;
+
+    for (const Slot& slot : slots) {
+        slotById[slot.id] = slot;
+    }
+
+    int R = static_cast<int>(requests.size());
+
+    vector<vector<string>> compatibleSlots(R);
+    vector<long long> penalty(R, 0);
+
+    long long totalPenaltyIfNobodyAssigned = 0;
+
+    for (int i = 0; i < R; i++) {
+        const Request& req = requests[i];
+
+        for (const string& slotId : req.availableSlotIds) {
+            if (slotById.find(slotId) == slotById.end()) {
+                continue;
+            }
+
+            const Slot& slot = slotById[slotId];
+
+            if (mentors.find(slot.mentorId) == mentors.end()) {
+                continue;
+            }
+
+            const Mentor& mentor = mentors.at(slot.mentorId);
+
+            if (mentor.specialties.find(req.requestedTopic) != mentor.specialties.end()) {
+                compatibleSlots[i].push_back(slotId);
+            }
+        }
+
+        long long currentStarvation = 0;
+
+        if (starvation.find(req.fellowId) != starvation.end()) {
+            currentStarvation = starvation.at(req.fellowId);
+        }
+
+        penalty[i] = skippedPenalty(req, currentStarvation);
+        totalPenaltyIfNobodyAssigned += penalty[i];
+    }
+
+    long long bestSavedPenalty = -1;
+
+    unordered_set<string> usedSlots;
+    unordered_map<string, string> currentAssignment;
+    unordered_map<string, string> bestAssignment;
+
+    auto dfs = [&](auto&& self, int index, long long savedPenalty) -> void {
+        if (index == R) {
+            if (savedPenalty > bestSavedPenalty) {
+                bestSavedPenalty = savedPenalty;
+                bestAssignment = currentAssignment;
+            }
+
+            return;
+        }
+
+        self(self, index + 1, savedPenalty);
+
+        const Request& req = requests[index];
+
+        for (const string& slotId : compatibleSlots[index]) {
+            if (usedSlots.find(slotId) != usedSlots.end()) {
+                continue;
+            }
+
+            usedSlots.insert(slotId);
+            currentAssignment[req.fellowId] = slotId;
+
+            self(self, index + 1, savedPenalty + penalty[index]);
+
+            currentAssignment.erase(req.fellowId);
+            usedSlots.erase(slotId);
+        }
+    };
+
+    dfs(dfs, 0, 0);
+
+    optimal.minPenalty = totalPenaltyIfNobodyAssigned - bestSavedPenalty;
+    optimal.assignment = bestAssignment;
+
+    return optimal;
+}
+
+bool withinTenPercent(long long greedyPenalty, long long optimalPenalty) {
+    if (optimalPenalty == 0) {
+        return greedyPenalty == 0;
+    }
+
+    return greedyPenalty * 100 <= optimalPenalty * 110;
 }
 
 void testAllFeasibleAssigned(TestRunner& test) {
@@ -628,6 +748,172 @@ void testNoRequestsWeek(TestRunner& test) {
     test.expect(solver.getStarvation("F2") == 1, "no requests: F2 starvation increments because not assigned");
 }
 
+void testGreedyMatchesOptimalOnEasyCase(TestRunner& test) {
+    vector<string> fellows;
+    fellows.push_back("F1");
+    fellows.push_back("F2");
+
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"}),
+        makeMentor("M2", vector<string>{"ai"})
+    });
+
+    ScarcityAwareGreedySolver solver(fellows, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M2", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "cpp", "blocker", 10));
+    requests.push_back(makeRequest("F2", vector<string>{"S2"}, "ai", "normal", 20));
+
+    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
+
+    WeeklyResult greedy = solver.solveWeek(slots, requests);
+    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
+
+    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality easy: greedy penalty matches exact optimum");
+    test.expect(greedy.weeklyPenalty == 0, "optimality easy: optimal penalty is 0");
+    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality easy: greedy is within 10%");
+}
+
+void testGreedyMatchesOptimalOnSimpleBottleneck(TestRunner& test) {
+    vector<string> fellows;
+    fellows.push_back("F1");
+    fellows.push_back("F2");
+    fellows.push_back("F3");
+
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(fellows, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M1", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("F1", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
+    requests.push_back(makeRequest("F2", vector<string>{"S1", "S2"}, "cpp", "normal", 20));
+    requests.push_back(makeRequest("F3", vector<string>{"S1", "S2"}, "cpp", "exploratory", 30));
+
+    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
+
+    WeeklyResult greedy = solver.solveWeek(slots, requests);
+    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
+
+    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality bottleneck: greedy matches exact optimum");
+    test.expect(greedy.weeklyPenalty == 1, "optimality bottleneck: only exploratory fellow is skipped");
+    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality bottleneck: greedy is within 10%");
+}
+
+void testGreedyMatchesOptimalOnStarvationRescue(TestRunner& test) {
+    vector<string> fellows;
+    fellows.push_back("A");
+    fellows.push_back("B");
+
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(fellows, mentors);
+
+    vector<Slot> prepSlots;
+    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
+
+    vector<Request> prepRequests;
+    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "blocker", 1));
+
+    solver.solveWeek(prepSlots, prepRequests);
+    solver.solveWeek(prepSlots, prepRequests);
+    solver.solveWeek(prepSlots, prepRequests);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("A", vector<string>{"S1"}, "cpp", "exploratory", 20));
+    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "blocker", 10));
+
+    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
+
+    WeeklyResult greedy = solver.solveWeek(slots, requests);
+    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
+
+    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality starvation rescue: greedy matches exact optimum");
+    test.expect(assignmentOf(greedy, "A") == "S1", "optimality starvation rescue: A is assigned despite lower urgency");
+    test.expect(greedy.weeklyPenalty == 3, "optimality starvation rescue: skipping B costs 3");
+    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality starvation rescue: greedy is within 10%");
+}
+
+void testGreedyKnownFailureCase(TestRunner& test) {
+    vector<string> fellows;
+    fellows.push_back("Scarce");
+    fellows.push_back("BlockerA");
+    fellows.push_back("BlockerB");
+
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"cpp"})
+    });
+
+    ScarcityAwareGreedySolver solver(fellows, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Mon9"));
+    slots.push_back(makeSlot("S2", "M1", "Tue9"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("Scarce", vector<string>{"S1"}, "cpp", "normal", 10));
+    requests.push_back(makeRequest("BlockerA", vector<string>{"S1", "S2"}, "cpp", "blocker", 20));
+    requests.push_back(makeRequest("BlockerB", vector<string>{"S1", "S2"}, "cpp", "blocker", 30));
+
+    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
+
+    WeeklyResult greedy = solver.solveWeek(slots, requests);
+    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
+
+    test.expect(greedy.weeklyPenalty == 3, "known failure: greedy penalty is 3");
+    test.expect(optimal.minPenalty == 2, "known failure: exact optimal penalty is 2");
+    test.expect(greedy.weeklyPenalty > optimal.minPenalty, "known failure: greedy is worse than optimal");
+    test.expect(!withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "known failure: greedy is NOT within 10% of optimum");
+    test.expect(assignmentOf(greedy, "Scarce") == "S1", "known failure: greedy assigns the scarce low-penalty fellow");
+}
+
+void testOracleDetectsNonOptimalGreedy(TestRunner& test) {
+    vector<string> fellows;
+    fellows.push_back("LowValueSingleOption");
+    fellows.push_back("HighValueFlexible1");
+    fellows.push_back("HighValueFlexible2");
+
+    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
+        makeMentor("M1", vector<string>{"systems"})
+    });
+
+    ScarcityAwareGreedySolver solver(fellows, mentors);
+
+    vector<Slot> slots;
+    slots.push_back(makeSlot("S1", "M1", "Slot1"));
+    slots.push_back(makeSlot("S2", "M1", "Slot2"));
+
+    vector<Request> requests;
+    requests.push_back(makeRequest("LowValueSingleOption", vector<string>{"S1"}, "systems", "normal", 1));
+    requests.push_back(makeRequest("HighValueFlexible1", vector<string>{"S1", "S2"}, "systems", "blocker", 2));
+    requests.push_back(makeRequest("HighValueFlexible2", vector<string>{"S1", "S2"}, "systems", "blocker", 3));
+
+    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
+
+    WeeklyResult greedy = solver.solveWeek(slots, requests);
+    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
+
+    long long greedyGap = greedy.weeklyPenalty - optimal.minPenalty;
+
+    test.expect(greedyGap == 1, "oracle non-optimal: greedy is worse by exactly 1 penalty point");
+    test.expect(greedy.weeklyPenalty == 3, "oracle non-optimal: greedy penalty is 3");
+    test.expect(optimal.minPenalty == 2, "oracle non-optimal: optimal penalty is 2");
+}
+
 void runAllTests() {
     TestRunner test;
 
@@ -638,6 +924,12 @@ void runAllTests() {
     testLeastDamagingSlotChoice(test);
     testTimestampTieBreaker(test);
     testNoRequestsWeek(test);
+
+    testGreedyMatchesOptimalOnEasyCase(test);
+    testGreedyMatchesOptimalOnSimpleBottleneck(test);
+    testGreedyMatchesOptimalOnStarvationRescue(test);
+    testGreedyKnownFailureCase(test);
+    testOracleDetectsNonOptimalGreedy(test);
 
     test.summary();
 

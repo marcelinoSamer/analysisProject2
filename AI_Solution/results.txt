@@ -1,0 +1,63 @@
+[PASS] all feasible: F1 gets S1
+[PASS] all feasible: F2 gets S2
+[PASS] all feasible: no unserved fellows
+[PASS] all feasible: weekly penalty is 0
+[PASS] all feasible: F1 starvation resets to 0
+[PASS] all feasible: F2 starvation resets to 0
+[PASS] infeasible: no assignments are produced
+[PASS] infeasible: F1 topic mismatch classified correctly
+[PASS] infeasible: F2 missing slot classified correctly
+[PASS] infeasible: F3 uncovered topic classified correctly
+[PASS] infeasible: penalty is 2 + 3 + 1 = 6
+[PASS] infeasible: no algorithm failure is reported
+[PASS] bottleneck: highest penalty fellow F1 is assigned
+[PASS] bottleneck: second-highest penalty fellow F2 is assigned
+[PASS] bottleneck: lowest penalty fellow F3 is unassigned
+[PASS] bottleneck: F3 is competitively unserved
+[PASS] bottleneck: penalty is only F3's skipped penalty = 1
+[PASS] bottleneck: no algorithm failure is reported
+[PASS] starvation rescue setup: A has starvation 3
+[PASS] starvation rescue setup: B has starvation 0
+[PASS] starvation rescue: starved exploratory A beats blocker B
+[PASS] starvation rescue: B is competitively unserved
+[PASS] starvation rescue: penalty is B's skipped blocker penalty = 3
+[PASS] starvation rescue: A starvation resets
+[PASS] starvation rescue: B starvation increments
+[PASS] least damaging setup: A has starvation 2
+[PASS] least damaging setup: B has starvation 0
+[PASS] least damaging: A avoids B's only slot and takes S2
+[PASS] least damaging: B still gets its only slot S1
+[PASS] least damaging: both fellows assigned, penalty 0
+[PASS] least damaging: no algorithm failure is reported
+[PASS] tie breaker: earlier timestamp wins
+[PASS] tie breaker: later timestamp is competitively unserved
+[PASS] tie breaker: skipped normal fellow penalty is 2
+[PASS] no requests: no assignments
+[PASS] no requests: no unserved request classifications
+[PASS] no requests: weekly penalty is 0
+[PASS] no requests: F1 starvation increments because not assigned
+[PASS] no requests: F2 starvation increments because not assigned
+[PASS] optimality easy: greedy penalty matches exact optimum
+[PASS] optimality easy: optimal penalty is 0
+[PASS] optimality easy: greedy is within 10%
+[PASS] optimality bottleneck: greedy matches exact optimum
+[PASS] optimality bottleneck: only exploratory fellow is skipped
+[PASS] optimality bottleneck: greedy is within 10%
+[PASS] optimality starvation rescue: greedy matches exact optimum
+[PASS] optimality starvation rescue: A is assigned despite lower urgency
+[PASS] optimality starvation rescue: skipping B costs 3
+[PASS] optimality starvation rescue: greedy is within 10%
+[PASS] known failure: greedy penalty is 3
+[PASS] known failure: exact optimal penalty is 2
+[PASS] known failure: greedy is worse than optimal
+[PASS] known failure: greedy is NOT within 10% of optimum
+[PASS] known failure: greedy assigns the scarce low-penalty fellow
+[PASS] oracle non-optimal: greedy is worse by exactly 1 penalty point
+[PASS] oracle non-optimal: greedy penalty is 3
+[PASS] oracle non-optimal: optimal penalty is 2
+
+==============================
+Tests passed: 57
+Tests failed: 0
+==============================
+All self-checking tests passed.
