@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // FOR GDB DEBUGGIN
+    {
+      "name": "Run C++",
+      "request": "launch",
+      "type": "cppdbg",
+      "program": "${workspaceFolder}\\${fileBasenameNoExtension}.exe",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:\\msys64\\mingw64\\bin\\gdb.exe",
+      "preLaunchTask": "Build C++",
+      "setupCommands": [
+        {
+          "description": "Enable pretty printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Stop on segmentation faults",
+          "text": "handle SIGSEGV stop print nopass",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Stop when C++ exceptions are thrown",
+          "text": "catch throw",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Stop on abort",
+          "text": "handle SIGABRT stop print nopass",
+          "ignoreFailures": true
+        }
+      ]
+    }
+    // {
+    //   "name": "Run C++ (LLDB)",
+    //   "type": "lldb",
+    //   "request": "launch",
+    //   "program": "${workspaceFolder}\\${fileBasenameNoExtension}.exe",
+    //   "cwd": "${workspaceFolder}",
+    //   "args": [],
+    //   "stopOnEntry": false,
+    //   "preLaunchTask": "Build C++",
+    //   "initCommands": [
+    //     "settings set target.process.stop-on-exec false",
+    //     "process handle -p true -s true -n false SIGSEGV",
+    //     "process handle -p true -s true -n false SIGABRT",
+    //     "break set -E c++"
+    //   ]
+    // }
+  ]
+}

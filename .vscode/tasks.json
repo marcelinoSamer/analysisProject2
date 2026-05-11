@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build C++",
+      "type": "cppbuild",
+      "command": "g++",
+      "args": [
+        "-g",
+        "-O0",
+        "-ggdb3",
+        "-D_GLIBCXX_DEBUG",
+        "-D_GLIBCXX_ASSERTIONS",
+        "-fuse-ld=lld",
+        "-std=c++23",
+        "-pipe",
+        "-Wall",
+        "-Wextra",
+        "-Wshadow",
+        "-Wpedantic",
+        "${file}",
+        "-o",
+        "${workspaceFolder}\\${fileBasenameNoExtension}.exe"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": false,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
+      }
+    }
+  ]
+}
