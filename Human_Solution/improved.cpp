@@ -11,7 +11,7 @@
 using namespace std;
 typedef long long ll;
 
-void precompute(
+void compress(
   vector<Mentor> mentors,
   vector<Slot> slots,
   vector<Request> requests,
@@ -85,11 +85,17 @@ void backtracking_solution(
   int s = int(slots.size());
   int r = int(requests.size());
 
-  // PRECOMPUTATION
+  // COMPRESSION
   vector<vector<int>> mentor_speciality_ids;
   vector<int> request_topic_ids;
   vector<int> slot_mentor_idx;
-  precompute(mentors, slots, requests, mentor_speciality_ids, request_topic_ids, slot_mentor_idx);
+  compress(mentors, slots, requests, mentor_speciality_ids, request_topic_ids, slot_mentor_idx);
+
+  // PRECOMPUTATION
+  int max_week = 0;
+  for(const auto &slot : slots) {
+    max_week = max(max_week, slot.week);
+  }
 
   assignments.assign(r, -1);
 
@@ -109,13 +115,12 @@ void backtracking_solution(
       vector<int> new_assignments(r, -1);
       
       // Determine assignments and calculate the max week number among the slots
-      int mx_week = 0, assigned_count = 0;
+      int assigned_count = 0;
       for (int i = 0; i < s; i++) {
         if (assigned_to[i] != -1) {
           new_assignments[assigned_to[i]] = i;
           ++assigned_count;
         }
-        mx_week = max(mx_week, slots[i].week);
       }
 
       // Calculate the cost for each request based on whether it was assigned or not
@@ -126,7 +131,7 @@ void backtracking_solution(
           int d = slots[new_assignments[i]].week - requests[i].week;
           cost += 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
         } else {
-          int d = mx_week - requests[i].week + 1;
+          int d = max_week - requests[i].week + 1;
           cost += 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
         }
       }
@@ -169,6 +174,8 @@ void backtracking_solution(
       }
     }
   }; backtrack(backtrack, 0);
+
+  cout << "Max assignments: " << max_assignments << ", Min cost: " << min_cost << "\n";
 
 }
 
@@ -270,62 +277,4 @@ int main() {
   for(int i = 0; i < R; i++) {
     cout << assignments[i] << "\n";
   }
-
-  
 }
-/*
-Sample input 1:
-3 2 5 5
-0 1 2
-0 2 AI ML
-1 1 AI
-0 0
-0 1
-1 1
-1 2
-1 2
-0
-2 0 4
-AI normal 1
-1 
-2 3 4
-AI blocker 2
-2 
-1 1
-ML exploratory 1
-0 
-1 4
-AI normal 3
-1 
-1 4
-AI exploratory 2
-
-Sample input 2:
-5 3 7 2
-
-0 1 7 6 10
-
-0 2 AI ML
-1 1 AI
-4 2 CYBE NET
-
-0 0
-0 2
-1 0
-1 1
-1 2
-4 1
-4 3
-
-1
-2 0 2
-AI normal 0
-
-7
-3 0 1 5
-CYBE blocker 1
-
-
-
-
-*/

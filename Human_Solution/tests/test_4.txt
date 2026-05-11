@@ -1,0 +1,22 @@
+2 2 4 4
+0 1
+0 1 AI
+1 1 ML
+0 0
+0 1
+1 2
+1 3
+0
+1 0
+AI normal 0
+1
+1 1
+ML blocker 0
+2
+1 2
+AI normal 0
+3
+1 3
+ML exploratory 1
+
+# Max assignments: 2, Min cost: 155
