@@ -11,10 +11,12 @@
 using namespace std;
 typedef long long ll;
 
+// Function to calculate the penalty based on urgency and delay
 ll penalty(int w, int d) {
   return 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
 }
 
+// Function to compress topics and mentor specialties into integer IDs
 void compress(
   vector<Mentor> mentors,
   vector<Slot> slots,
