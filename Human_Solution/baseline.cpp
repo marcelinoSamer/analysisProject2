@@ -13,7 +13,7 @@ typedef long long ll;
 
 // Function to calculate the penalty based on urgency and delay
 ll penalty(int w, int d) {
-  return 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
+  return 1LL * d * (d + 1) * (2 * d + 1) / 6 * w;
 }
 
 void baseline_solution(
@@ -124,7 +124,7 @@ void baseline_solution(
 int main() {
 
   // Fast input/output optimization
-  // ios::sync_with_stdio(0); cin.tie(0);
+  ios::sync_with_stdio(0); cin.tie(0);
   
   // Read the number of fellows, mentors, slots, and requests
   int F, M, S, R;

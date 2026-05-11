@@ -1,0 +1,17 @@
+1 1 2 2
+
+0
+
+0 1 algo
+
+0 1
+0 2
+
+0
+1 0
+algo normal 1
+0
+2 0 1
+algo normal 0
+
+# Max Assignments: 2, Min Cost: 10

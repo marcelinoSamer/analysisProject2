@@ -13,7 +13,7 @@ typedef long long ll;
 
 // Function to calculate the penalty based on urgency and delay
 ll penalty(int w, int d) {
-  return 1LL * w * d * (d + 1) * (2 * d + 1) / 6;
+  return 1LL * d * (d + 1) * (2 * d + 1) / 6 * w;
 }
 
 // Function to compress topics and mentor specialties into integer IDs
@@ -139,6 +139,7 @@ void backtracking_solution(
   for(const auto &slot : slots) {
     max_week = max(max_week, slot.week);
   }
+  max_week += 10;
 
   // PREPROCESSING
   preprocess_requests(slots, mentor_speciality_ids, request_topic_ids, slot_mentor_idx, requests);
@@ -224,7 +225,6 @@ void backtracking_solution(
       }
     }
   }; backtrack(backtrack, 0);
-
 }
 
 // Function to implement greedy huristic solution
@@ -250,6 +250,7 @@ void greedy_heuristic_solution(
   for(const auto &slot : slots) {
     max_week = max(max_week, slot.week);
   }
+  max_week += 10;
 
   // PREPROCESSING
   preprocess_requests(slots, mentor_speciality_ids, request_topic_ids, slot_mentor_idx, requests);
@@ -329,7 +330,7 @@ void greedy_heuristic_solution(
 int main() {
 
   // Fast input/output optimization
-  // ios::sync_with_stdio(0); cin.tie(0);
+  ios::sync_with_stdio(0); cin.tie(0);
   
   // Read the number of fellows, mentors, slots, and requests
   int F, M, S, R;
@@ -415,11 +416,11 @@ int main() {
 
   vector<int> assignments;
   bool timed_out = false;
-  backtracking_solution(mentors, slots, requests, assignments, timed_out);
+  // backtracking_solution(mentors, slots, requests, assignments, timed_out);
 
   // If backtracking timed out, use the greedy heuristic solution
+  greedy_heuristic_solution(mentors, slots, requests, assignments);
   if (timed_out) {
-    greedy_heuristic_solution(mentors, slots, requests, assignments);
   }
 
   // Output the assignments
