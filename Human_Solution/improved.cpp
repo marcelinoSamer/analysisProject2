@@ -139,7 +139,7 @@ void backtracking_solution(
   for(const auto &slot : slots) {
     max_week = max(max_week, slot.week);
   }
-  max_week += 10;
+  max_week += 3;
 
   // PREPROCESSING
   preprocess_requests(slots, mentor_speciality_ids, request_topic_ids, slot_mentor_idx, requests);
@@ -250,7 +250,7 @@ void greedy_heuristic_solution(
   for(const auto &slot : slots) {
     max_week = max(max_week, slot.week);
   }
-  max_week += 10;
+  max_week += 3;
 
   // PREPROCESSING
   preprocess_requests(slots, mentor_speciality_ids, request_topic_ids, slot_mentor_idx, requests);

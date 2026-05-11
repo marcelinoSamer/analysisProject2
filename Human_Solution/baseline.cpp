@@ -32,6 +32,7 @@ void baseline_solution(
   for(const auto &slot : slots) {
     max_week = max(max_week, slot.week);
   }
+  max_week += 3;
 
   // Build a map from mentor_id to specialties for topic matching
   unordered_map<int, vector<string>> mentor_specialties;
