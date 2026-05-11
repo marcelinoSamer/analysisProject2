@@ -7,49 +7,73 @@
 // Optimization flags for faster execution
 #pragma GCC optimize("O3,unroll-loops")
 
-/*
-\section*{Objective Function}
-
-The algorithm minimizes the total starvation penalty for the current week:
-\[
-  \text{Penalty}_{\text{week}} = \sum_{f \in U} w(\texttt{urgency}_f)
-  \cdot (s_f + 1)^{2}
-\]
-where $U$ is the set of fellows who submitted a request but were not assigned
-this week, and $(s_f + 1)$ is the value $s_f$ will take after the update. The
-urgency weights are:
-\[
-  w(\texttt{blocker}) = 3, \quad
-  w(\texttt{normal}) = 2, \quad
-  w(\texttt{exploratory}) = 1
-\]
-
-The algorithm minimizes $\text{Penalty}_{\text{week}}$ independently each week.
-The accumulated total across all weeks:
-\[
-  \text{Penalty}_{\text{total}} = \sum_{t=1}^{T} \text{Penalty}_{t}
-\]
-is reported as a performance metric at the end of the program. Each week's
-contribution is a fresh charge for that week's assignment decision. It is
-not a re-counting of previous weeks, but a new cost reflecting how much it
-hurts to skip a fellow given how long they have already been waiting.
-
-\section*{Tie-Breaking Rules}
-
-When multiple feasible assignments yield the same weekly penalty, ties are
-broken in the following order:
-
-\begin{enumerate}
-    \item Higher urgency tier first
-          ($\texttt{blocker} > \texttt{normal} > \texttt{exploratory}$).
-    \item Higher current $s_f$ value.
-    \item Earlier request timestamp.
-\end{enumerate}
-*/
-
 // Using standard namespace and defining long long for convenience
 using namespace std;
 typedef long long ll;
+
+void precompute(
+  vector<Fellow> fellows,
+  vector<Mentor> mentors,
+  vector<Slot> slots,
+  vector<Request> requests,
+  vector<vector<int>> &mentor_speciality_ids,
+  vector<int> &request_topic_ids,
+  vector<int> &slot_mentor_idx
+) {
+
+  // Getting the sizes of fellows, mentors, slots, and requests for easier reference
+  int f = int(fellows.size());
+  int m = int(mentors.size());
+  int s = int(slots.size());
+  int r = int(requests.size());
+
+  // Compressing the requested topics and mentor specialties into integer IDs for faster comparisons
+  vector<string> all_topics;
+  for(const auto &mentor : mentors) {
+    for(const auto &specialty : mentor.specialties) {
+      all_topics.push_back(specialty);
+    }
+  }
+  for(const auto &request : requests) {
+    all_topics.push_back(request.requested_topic);
+  }
+  
+  sort(all_topics.begin(), all_topics.end());
+  all_topics.erase(unique(all_topics.begin(), all_topics.end()), all_topics.end());
+  
+  mentor_speciality_ids.resize(m);
+  for(int i = 0; i < m; i++) {
+    for(const auto &specialty : mentors[i].specialties) {
+      int topic_id = int(lower_bound(
+        all_topics.begin(),
+        all_topics.end(),
+        specialty
+      ) - all_topics.begin());
+      mentor_speciality_ids[i].push_back(topic_id);
+    }
+  }
+  
+  request_topic_ids.resize(r);
+  for(int i = 0; i < r; i++) {
+    request_topic_ids[i] = int(lower_bound(
+      all_topics.begin(),
+      all_topics.end(),
+      requests[i].requested_topic
+    ) - all_topics.begin());
+  }
+  
+  // Getting the index of the mentor for each slot for faster access during backtracking
+  slot_mentor_idx.resize(s);
+  for(int i = 0; i < s; i++) {
+    auto it = find_if(mentors.begin(), mentors.end(), [&](const Mentor &mentor) {
+      return mentor.id == slots[i].mentor_id;
+    });
+    if (it == mentors.end()) {
+      throw runtime_error("Mentor ID not found for slot " + to_string(i));
+    }
+    slot_mentor_idx[i] = int(it - mentors.begin());
+  }
+}
 
 // Function to implement brute-force backtracking solution => O(S^R)
 void backtracking_solution(
@@ -65,6 +89,13 @@ void backtracking_solution(
   int m = int(mentors.size());
   int s = int(slots.size());
   int r = int(requests.size());
+
+  // PRECOMPUTATION
+  vector<vector<int>> mentor_speciality_ids;
+  vector<int> request_topic_ids;
+  vector<int> slot_mentor_idx;
+  precompute(fellows, mentors, slots, requests, mentor_speciality_ids, request_topic_ids, slot_mentor_idx);
+
   assignments.assign(r, -1);
 
   // Vector to keep track of which slot is assigned to which request, initialized to -1
@@ -129,8 +160,8 @@ void backtracking_solution(
       // Check if the slot is unassigned and if the mentor of that slot has the required specialty
       if (assigned_to[id_slot] == -1) {
         bool can_assign = false;
-        for(int topic_id : mentors[slots[id_slot].mentor_idx].speciality_ids) {
-          if (topic_id == requests[idx].requested_topic_id) {
+        for(int topic_id : mentor_speciality_ids[slot_mentor_idx[id_slot]]) {
+          if (topic_id == request_topic_ids[idx]) {
             can_assign = true;
             break;
           }
@@ -176,7 +207,6 @@ int main() {
     // Read the number of specialties and the specialties themselves
     cin >> num_specialties;
     mentors[i].specialties.resize(num_specialties);
-    mentors[i].speciality_ids.resize(num_specialties, -1);
     for(int j = 0; j < num_specialties; j++) {
       cin >> mentors[i].specialties[j];
     }
@@ -186,13 +216,6 @@ int main() {
   vector<Slot> slots(S);
   for(int i = 0; i < S; i++) {
     cin >> slots[i].mentor_id >> slots[i].week;
-    auto it = find_if(mentors.begin(), mentors.end(), [&](const Mentor &mentor) {
-      return mentor.id == slots[i].mentor_id;
-    });
-    if (it == mentors.end()) {
-      throw runtime_error("Mentor ID not found for slot " + to_string(i));
-    }
-    slots[i].mentor_idx = int(it - mentors.begin());
   }
 
   // Read requests
@@ -210,7 +233,7 @@ int main() {
     }
 
     // Read the requested topic
-    cin >> requests[i].requested_topic_str;
+    cin >> requests[i].requested_topic;
     
     // Read the urgency level and convert it to the corresponding enum value
     string urgency_str;
@@ -237,42 +260,9 @@ int main() {
   }
 
   for(auto &request : requests) {
-    for(auto &c : request.requested_topic_str) {
+    for(auto &c : request.requested_topic) {
       c = tolower(c);
     }
   }
 
-  // Compressing the requested topics
-  vector<string> all_topics;
-  for(const auto &mentor : mentors) {
-    for(const auto &specialty : mentor.specialties) {
-      all_topics.push_back(specialty);
-    }
-  }
-
-  for(const auto &request : requests) {
-    all_topics.push_back(request.requested_topic_str);
-  }
-
-  sort(all_topics.begin(), all_topics.end());
-  all_topics.erase(unique(all_topics.begin(), all_topics.end()), all_topics.end());
-
-  for(auto &mentor : mentors) {
-    int size = int(mentor.specialties.size());
-    for(int i = 0; i < size; i++) {
-      mentor.speciality_ids[i] = int(lower_bound(
-        all_topics.begin(),
-        all_topics.end(),
-        mentor.specialties[i]
-      ) - all_topics.begin());
-    }
-  }
-
-  for(auto &request : requests) {
-    request.requested_topic_id = int(lower_bound(
-      all_topics.begin(),
-      all_topics.end(),
-      request.requested_topic_str
-    ) - all_topics.begin());
-  }
 }

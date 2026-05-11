@@ -15,19 +15,16 @@ struct Fellow {
 struct Mentor {
   int id;
   vector<string> specialties;
-  vector<int> speciality_ids;
 };
 
 struct Slot {
   int mentor_id;
-  int mentor_idx;
   int week;
 };
 
 struct Request {
   int fellow_id;
-  string requested_topic_str;
-  int requested_topic_id;
+  string requested_topic;
   Urgency urgency;
   int week;
   vector<int> available_slot_ids;
