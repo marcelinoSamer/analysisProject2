@@ -416,11 +416,12 @@ int main() {
 
   vector<int> assignments;
   bool timed_out = false;
-  // backtracking_solution(mentors, slots, requests, assignments, timed_out);
+  backtracking_solution(mentors, slots, requests, assignments, timed_out);
 
   // If backtracking timed out, use the greedy heuristic solution
-  greedy_heuristic_solution(mentors, slots, requests, assignments);
   if (timed_out) {
+    cout << "Backtracking timed out. Using greedy heuristic solution.\n";
+    greedy_heuristic_solution(mentors, slots, requests, assignments);
   }
 
   // Output the assignments
