@@ -1,0 +1,355 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <map>
+#include <algorithm>
+
+using namespace std;
+
+typedef long long ll;
+const ll INF = 1e18;
+const ll K = 1000000000LL;
+
+// Weights
+const ll ALPHA_URGENCY = 5;
+const ll BETA_TOPIC_MATCH = 2;
+const ll GAMMA_PREFERRED_MENTOR = 1;
+const ll DELTA_AGE = 2;
+
+enum class Urgency { LOW, MEDIUM, HIGH };
+
+struct Request {
+  int id;
+  int fellow_id;
+  vector<string> required_topics;
+  vector<string> acceptable_times;
+  Urgency urgency;
+  int preferred_mentor;
+  int submission_week;
+  
+  bool is_served = false;
+  string unserved_reason = "";
+  
+  int age(int current_week) const {
+    return current_week - submission_week;
+  }
+};
+
+struct Slot {
+  int id;
+  int mentor_id;
+  string time_block;
+  vector<string> mentor_topics;
+  
+  bool is_assigned = false;
+};
+
+// Calculate topic match score
+int get_topic_match(const Request& r, const Slot& s) {
+  int score = 0;
+  for (const string& t1 : r.required_topics) {
+    for (const string& t2 : s.mentor_topics) {
+      if (t1 == t2) {
+        score++;
+      }
+    }
+  }
+  return score;
+}
+
+// Check if request r and slot s are compatible
+bool is_compatible(const Request& r, const Slot& s) {
+  bool time_match = false;
+  for (const string& t : r.acceptable_times) {
+    if (t == s.time_block) {
+      time_match = true;
+      break;
+    }
+  }
+
+  if (!time_match || get_topic_match(r, s) == 0) {
+    return false;
+  }
+  
+  return true;
+}
+
+ll calculate_weight(const Request& r, const Slot& s, int current_week) {
+  if (!is_compatible(r, s)) return -INF; 
+  
+  ll u = 0;
+  if (r.urgency == Urgency::HIGH) u = 3;
+  else if (r.urgency == Urgency::MEDIUM) u = 2;
+  else u = 1;
+  
+  ll topic_score = get_topic_match(r, s);
+  ll p = (r.preferred_mentor != 0 && r.preferred_mentor == s.mentor_id) ? 1 : 0;
+  ll age = r.age(current_week);
+  
+  ll benefit = ALPHA_URGENCY * u + BETA_TOPIC_MATCH * topic_score + GAMMA_PREFERRED_MENTOR * p + DELTA_AGE * age;
+  return benefit + K;
+}
+
+// Hungarian implementation
+pair<ll, vector<int>> solve_hungarian(int n, int m, const vector<vector<ll>>& a) {
+  vector<ll> u(n + 1, 0), v(m + 1, 0);
+  vector<int> p(m + 1, 0), way(m + 1, 0);
+  
+  for (int i = 1; i <= n; ++i) {
+    p[0] = i;
+    int j0 = 0;
+    vector<ll> minv(m + 1, INF);
+    vector<char> used(m + 1, false);
+    
+    do {
+      used[j0] = true;
+      int i0 = p[j0], j1 = 0;
+      ll delta = INF;
+      
+      for (int j = 1; j <= m; ++j) {
+        if (!used[j]) {
+          ll cur = a[i0][j] - u[i0] - v[j];
+          if (cur < minv[j]) {
+            minv[j] = cur;
+            way[j] = j0;
+          }
+          if (minv[j] < delta) {
+            delta = minv[j];
+            j1 = j;
+          }
+        }
+      }
+      
+      for (int j = 0; j <= m; ++j) {
+        if (used[j]) {
+          u[p[j]] += delta;
+          v[j] -= delta;
+        } else {
+          minv[j] -= delta;
+        }
+      }
+      j0 = j1;
+    } while (p[j0] != 0);
+    
+    do {
+      int j1 = way[j0];
+      p[j0] = p[j1];
+      j0 = j1;
+    } while (j0 != 0);
+  }
+  
+  vector<int> ans(n + 1, 0);
+  for (int j = 1; j <= m; ++j) {
+    if (p[j] != 0) {
+      ans[p[j]] = j;
+    }
+  }
+  
+  return {-v[0], ans};
+}
+
+void solve() {
+  string line;
+  if (!getline(cin, line)) return;
+  
+  // Read Fellows
+  stringstream ss_f(line);
+  int f;
+  while (ss_f >> f) {}
+  
+  // Read Mentors
+  getline(cin, line);
+  stringstream ss_m(line);
+  int m_id;
+  map<int, vector<string>> mentor_topics;
+  vector<int> mentors;
+  while (ss_m >> m_id) {
+    mentors.push_back(m_id);
+  }
+  
+  // Mentor Specialties
+  for (int i = 0; i < int(mentors.size()); ++i) {
+    getline(cin, line);
+    stringstream ss(line);
+    int m_raw;
+    ss >> m_raw;
+    string topic;
+    while (ss >> topic) {
+      mentor_topics[m_raw].push_back(topic);
+    }
+  }
+
+  vector<Request> global_requests;
+  vector<Slot> global_slots;
+  
+  ll total_served_requests = 0;
+  ll total_benefit = 0;
+
+  // Read Weeks
+  while (getline(cin, line)) {
+    if (line.empty()) continue;
+    if (line.substr(0, 4) == "WEEK") {
+      int w;
+      stringstream ss(line);
+      string temp;
+      ss >> temp >> w;
+      
+      // Read Slots
+      getline(cin, line);
+      int S = stoi(line);
+      
+      vector<int> week_slot_ids;
+      if (S > 0) {
+        getline(cin, line);
+        stringstream ss_slots(line);
+        string token;
+        while (ss_slots >> token) {
+          size_t colon_pos = token.find(':');
+          int mentor = stoi(token.substr(0, colon_pos));
+          string time_b = token.substr(colon_pos + 1);
+          
+          Slot s_obj;
+          s_obj.id = int(global_slots.size());
+          s_obj.mentor_id = mentor;
+          s_obj.time_block = time_b;
+          s_obj.mentor_topics = mentor_topics[mentor];
+          s_obj.is_assigned = false;
+          
+          week_slot_ids.push_back(s_obj.id);
+          global_slots.push_back(s_obj);
+        }
+      }
+      
+      // Read Requests
+      getline(cin, line);
+      int R = stoi(line);
+      
+      vector<int> week_req_ids;
+      for (int i = 0; i < R; ++i) {
+        getline(cin, line);
+        stringstream ss_req(line);
+        int f_id, pref_m;
+        string req_topics, acc_times, urg_str;
+        
+        ss_req >> f_id >> req_topics >> acc_times >> urg_str >> pref_m;
+        
+        Request r_obj;
+        r_obj.id = int(global_requests.size());
+        r_obj.fellow_id = f_id;
+        
+        if (req_topics != "\"\"") {
+          stringstream topics_stream(req_topics);
+          string t;
+          while (getline(topics_stream, t, ',')) r_obj.required_topics.push_back(t);
+        }
+        
+        stringstream times_stream(acc_times);
+        string t_time;
+        while (getline(times_stream, t_time, ',')) r_obj.acceptable_times.push_back(t_time);
+        
+        if (urg_str == "high") r_obj.urgency = Urgency::HIGH;
+        else if (urg_str == "medium") r_obj.urgency = Urgency::MEDIUM;
+        else r_obj.urgency = Urgency::LOW;
+        
+        r_obj.preferred_mentor = pref_m;
+        r_obj.submission_week = w;
+        
+        week_req_ids.push_back(r_obj.id);
+        global_requests.push_back(r_obj);
+      }
+      
+      // Collect Pending Requests and Available Slots
+      vector<int> P;
+      vector<int> A;
+      for (size_t i = 0; i < global_requests.size(); ++i) {
+        if (!global_requests[i].is_served) P.push_back(i);
+      }
+      for (size_t i = 0; i < global_slots.size(); ++i) {
+        if (!global_slots[i].is_assigned) A.push_back(i);
+      }
+      
+      int n = int(P.size());
+      int m = int(A.size());
+      
+      if (n > 0 && m > 0) {
+        int dim = max(n, m);
+        vector<vector<ll>> mat(dim + 1, vector<ll>(dim + 1, 0));
+        
+        for (int i = 0; i < dim; ++i) {
+          for (int j = 0; j < dim; ++j) {
+            if (i < n && j < m) {
+              ll w_score = calculate_weight(global_requests[P[i]], global_slots[A[j]], w);
+              if (w_score != -INF) {
+                mat[i + 1][j + 1] = -w_score;
+              }
+            }
+          }
+        }
+        
+        auto res = solve_hungarian(dim, dim, mat);
+        vector<int> matching = res.second;
+        
+        for (int i = 0; i < n; ++i) {
+          int matched_col = matching[i + 1];
+          if (matched_col != 0 && mat[i + 1][matched_col] != 0 && mat[i + 1][matched_col] != INF) {
+            int slot_idx = matched_col - 1;
+            
+            // Assign
+            global_requests[P[i]].is_served = true;
+            global_slots[A[slot_idx]].is_assigned = true;
+            
+            ll raw_weight = calculate_weight(global_requests[P[i]], global_slots[A[slot_idx]], w);
+            total_benefit += (raw_weight - K);
+            total_served_requests++;
+            
+            cout << "[Week " << w << "] Assigned Request " << P[i] + 1 << " to Slot " << A[slot_idx] + 1 << "\n";
+          } else {
+            // Check if there was any feasible slot among all available
+            bool feasible = false;
+            for (int j = 0; j < m; ++j) {
+              if (calculate_weight(global_requests[P[i]], global_slots[A[j]], w) != -INF) {
+                feasible = true;
+                break;
+              }
+            }
+            if (!feasible && global_requests[P[i]].unserved_reason == "") {
+              global_requests[P[i]].unserved_reason = "no feasible slot";
+            } else if (feasible) {
+              global_requests[P[i]].unserved_reason = "lower priority";
+            }
+          }
+        }
+      } else {
+        // Evaluate for reasons if m == 0
+        for (int i = 0; i < n; ++i) {
+          if (global_requests[P[i]].unserved_reason == "") {
+             global_requests[P[i]].unserved_reason = "no feasible slot";
+          }
+        }
+      }
+    }
+  }
+  
+  // Print Evaluation
+  cout << "\nTotal Served Requests: " << total_served_requests << "\n";
+  cout << "Total Benefit: " << total_benefit << "\n";
+  
+  // Output unserved requests
+  cout << "\nUnserved Requests Breakdown:\n";
+  for (size_t i = 0; i < global_requests.size(); ++i) {
+    if (!global_requests[i].is_served) {
+      string reason = global_requests[i].unserved_reason;
+      if (reason.empty()) {
+        reason = "lower priority"; 
+      }
+      cout << "Request " << i + 1 << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
+    }
+  }
+}
+
+int main() {
+  ios_base::sync_with_stdio(0); cin.tie(0);
+  solve();
+  return 0;
+}

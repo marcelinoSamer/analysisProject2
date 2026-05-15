@@ -1,0 +1,15 @@
+101 102 103
+201 202 203
+201 python
+202 python
+203 python
+WEEK 1
+0
+3
+101 python Mon10 medium 0
+102 python Mon10 medium 0
+103 python Mon10 medium 0
+WEEK 2
+3
+201:Mon10 202:Mon10 203:Mon10
+0

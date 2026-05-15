@@ -1,0 +1,16 @@
+101 102 103 104 105
+201 202 203 204 205
+201 python
+202 java
+203 c++
+204 go
+205 rust
+WEEK 1
+5
+201:Mon10 202:Tue10 203:Wed10 204:Thu10 205:Fri10
+5
+101 python Mon10 medium 0
+102 java Tue10 medium 0
+103 c++ Wed10 medium 0
+104 go Thu10 medium 0
+105 rust Fri10 medium 0

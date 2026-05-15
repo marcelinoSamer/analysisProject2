@@ -176,6 +176,12 @@ void solve() {
       
       // Process the week
       sim.process_week(w, week_req_ids, week_slot_ids);
+      
+      // Print Weekly Assignments
+      for (const string& log : sim.weekly_logs) {
+        cout << log << "\n";
+      }
+      sim.weekly_logs.clear();
     }
   }
   

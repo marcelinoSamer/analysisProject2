@@ -66,6 +66,9 @@ public:
   ll total_served_requests = 0;
   ll total_benefit = 0;
   
+  // Weekly Logs
+  vector<string> weekly_logs;
+  
   // Logs for reasons
   vector<string> unserved_reasons;
 
@@ -201,6 +204,8 @@ public:
     ll raw_weight = calculate_weight(requests[r_idx], slots[s_idx], current_week);
     total_benefit += (raw_weight - K);
     total_served_requests++;
+    
+    weekly_logs.push_back("[Week " + to_string(current_week) + "] Assigned Request " + to_string(r_idx + 1) + " to Slot " + to_string(s_idx + 1));
   }
   
   void expire_request(int r_idx) {
@@ -281,7 +286,7 @@ public:
           it = A.erase(it);
           continue;
         } else if (r < PROB_SLOT_RESCHEDULE) {
-          slots[*it].time_block += 3; // Simplistic reschedule
+          slots[*it].time_block = min(100 * 7 + 23, slots[*it].time_block + getRandomDelay()); // Simplistic reschedule
           freed_slots.push_back(*it);
           it = A.erase(it);
           continue;
@@ -314,7 +319,7 @@ public:
         int r3 = getRandomPercentage();
         if (r3 < PROB_SLOT_RESCHEDULE) {
           // Slot Rescheduling (Assigned)
-          slots[pair.second].time_block += 3;
+          slots[pair.second].time_block = min(100 * 7 + 23, slots[pair.second].time_block + getRandomDelay());
           slots[pair.second].state = SlotState::AVAILABLE;
           requests[pair.first].state = RequestState::PENDING;
           A.push_back(pair.second);

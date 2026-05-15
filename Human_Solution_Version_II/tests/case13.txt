@@ -1,0 +1,23 @@
+101 102 103 104
+201 202 203
+201 python database
+202 python api
+203 database
+WEEK 1
+2
+201:Mon10 203:Tue14
+3
+101 python Mon10 high 0
+102 database Tue14 medium 0
+103 api Wed10 low 202
+WEEK 2
+1
+202:Wed10
+2
+104 python Mon10 high 0
+101 database Mon10 medium 0
+WEEK 3
+1
+201:Mon10
+1
+102 python Mon10 high 201

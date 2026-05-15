@@ -23,15 +23,19 @@ const ll GAMMA_PREFERRED_MENTOR = 1;
 const ll DELTA_AGE = 2;
 
 // Event Probabilities
-const int PROB_REQUEST_CANCEL = 0; // Chance a pending request cancels
-const int PROB_SLOT_CANCEL = 0; // Chance an available slot cancels
-const int PROB_SLOT_RESCHEDULE = 0; // Chance an available slot reschedules
+const int PROB_REQUEST_CANCEL = 5; // Chance a pending request cancels
+const int PROB_SLOT_CANCEL = 5; // Chance an available slot cancels
+const int PROB_SLOT_RESCHEDULE = 5; // Chance an available slot reschedules
 
 // Random generator setup
 mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
 
 int getRandomPercentage() {
   return uniform_int_distribution<int>(0, 99)(rng);
+}
+
+int getRandomDelay() {
+  return uniform_int_distribution<int>(1, 23)(rng);
 }
 
 #endif // CONFIG_H

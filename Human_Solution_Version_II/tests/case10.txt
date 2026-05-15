@@ -1,0 +1,21 @@
+101 102 103 104 105 106 107 108 109 110
+201 202 203 204 205
+201 python
+202 python
+203 python
+204 python
+205 python
+WEEK 1
+5
+201:Mon10 202:Mon10 203:Mon10 204:Mon10 205:Mon10
+10
+101 python Mon10 low 0
+102 python Mon10 low 0
+103 python Mon10 medium 0
+104 python Mon10 high 0
+105 python Mon10 high 0
+106 python Mon10 low 0
+107 python Mon10 medium 0
+108 python Mon10 high 0
+109 python Mon10 high 0
+110 python Mon10 high 0
