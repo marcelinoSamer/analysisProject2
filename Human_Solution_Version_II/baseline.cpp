@@ -91,63 +91,6 @@ ll calculate_weight(const Request& r, const Slot& s, int current_week) {
   return benefit + K;
 }
 
-// Hungarian implementation
-pair<ll, vector<int>> solve_hungarian(int n, int m, const vector<vector<ll>>& a) {
-  vector<ll> u(n + 1, 0), v(m + 1, 0);
-  vector<int> p(m + 1, 0), way(m + 1, 0);
-  
-  for (int i = 1; i <= n; ++i) {
-    p[0] = i;
-    int j0 = 0;
-    vector<ll> minv(m + 1, INF);
-    vector<char> used(m + 1, false);
-    
-    do {
-      used[j0] = true;
-      int i0 = p[j0], j1 = 0;
-      ll delta = INF;
-      
-      for (int j = 1; j <= m; ++j) {
-        if (!used[j]) {
-          ll cur = a[i0][j] - u[i0] - v[j];
-          if (cur < minv[j]) {
-            minv[j] = cur;
-            way[j] = j0;
-          }
-          if (minv[j] < delta) {
-            delta = minv[j];
-            j1 = j;
-          }
-        }
-      }
-      
-      for (int j = 0; j <= m; ++j) {
-        if (used[j]) {
-          u[p[j]] += delta;
-          v[j] -= delta;
-        } else {
-          minv[j] -= delta;
-        }
-      }
-      j0 = j1;
-    } while (p[j0] != 0);
-    
-    do {
-      int j1 = way[j0];
-      p[j0] = p[j1];
-      j0 = j1;
-    } while (j0 != 0);
-  }
-  
-  vector<int> ans(n + 1, 0);
-  for (int j = 1; j <= m; ++j) {
-    if (p[j] != 0) {
-      ans[p[j]] = j;
-    }
-  }
-  
-  return {-v[0], ans};
-}
 
 void solve() {
   string line;
@@ -273,39 +216,47 @@ void solve() {
       int m = int(A.size());
       
       if (n > 0 && m > 0) {
-        int dim = max(n, m);
-        vector<vector<ll>> mat(dim + 1, vector<ll>(dim + 1, 0));
+        // Greedy heuristic: build all compatible pairs, sort by weight desc, assign greedily
+        struct Edge { ll weight; int req_idx; int slot_idx; };
+        vector<Edge> edges;
+        edges.reserve(n * m);
         
-        for (int i = 0; i < dim; ++i) {
-          for (int j = 0; j < dim; ++j) {
-            if (i < n && j < m) {
-              ll w_score = calculate_weight(global_requests[P[i]], global_slots[A[j]], w);
-              if (w_score != -INF) {
-                mat[i + 1][j + 1] = -w_score;
-              }
+        for (int i = 0; i < n; ++i) {
+          for (int j = 0; j < m; ++j) {
+            ll edge_w = calculate_weight(global_requests[P[i]], global_slots[A[j]], w);
+            if (edge_w != -INF) {
+              edges.push_back({edge_w, i, j});
             }
           }
         }
         
-        auto res = solve_hungarian(dim, dim, mat);
-        vector<int> matching = res.second;
+        sort(edges.begin(), edges.end(), [](const Edge& a, const Edge& b) {
+          return a.weight > b.weight;
+        });
         
-        for (int i = 0; i < n; ++i) {
-          int matched_col = matching[i + 1];
-          if (matched_col != 0 && mat[i + 1][matched_col] != 0 && mat[i + 1][matched_col] != INF) {
-            int slot_idx = matched_col - 1;
+        vector<bool> req_used(n, false);
+        vector<bool> slot_used(m, false);
+        
+        for (auto& e : edges) {
+          if (!req_used[e.req_idx] && !slot_used[e.slot_idx]) {
+            req_used[e.req_idx]  = true;
+            slot_used[e.slot_idx] = true;
             
-            // Assign
-            global_requests[P[i]].is_served = true;
-            global_slots[A[slot_idx]].is_assigned = true;
+            global_requests[P[e.req_idx]].is_served  = true;
+            global_slots[A[e.slot_idx]].is_assigned   = true;
             
-            ll raw_weight = calculate_weight(global_requests[P[i]], global_slots[A[slot_idx]], w);
+            ll raw_weight = calculate_weight(global_requests[P[e.req_idx]], global_slots[A[e.slot_idx]], w);
             total_benefit += (raw_weight - K);
             total_served_requests++;
             
-            cout << "[Week " << w << "] Assigned Request " << P[i] + 1 << " to Slot " << A[slot_idx] + 1 << "\n";
-          } else {
-            // Check if there was any feasible slot among all available
+            cout << "[Week " << w << "] Assigned Request " << P[e.req_idx] + 1
+                 << " to Slot " << A[e.slot_idx] + 1 << "\n";
+          }
+        }
+        
+        // Label unserved requests
+        for (int i = 0; i < n; ++i) {
+          if (!req_used[i]) {
             bool feasible = false;
             for (int j = 0; j < m; ++j) {
               if (calculate_weight(global_requests[P[i]], global_slots[A[j]], w) != -INF) {

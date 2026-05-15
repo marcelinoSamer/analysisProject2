@@ -229,53 +229,6 @@ public:
     unserved_reasons[r_idx] = "no feasible slot"; 
   }
 
-  // O(N) Greedy Optimization for a single isolated slot
-  void greedy_assign_slot(int s_idx) {
-    ll best_w = -INF;
-    int best_p_idx = -1;
-    for (int i = 0; i < int(P.size()); ++i) {
-      ll w = calculate_weight(requests[P[i]], slots[s_idx], current_week);
-      if (w > best_w && w != -INF) {
-        best_w = w;
-        best_p_idx = i;
-      }
-    }
-    
-    if (best_p_idx != -1) {
-      int r_idx = P[best_p_idx];
-      L.push_back({r_idx, s_idx});
-      requests[r_idx].state = RequestState::SERVED;
-      slots[s_idx].state = SlotState::ASSIGNED;
-      P.erase(P.begin() + best_p_idx);
-    } else {
-      slots[s_idx].state = SlotState::AVAILABLE;
-      A.push_back(s_idx);
-    }
-  }
-
-  // O(N) Greedy Optimization for a single isolated request
-  void greedy_assign_request(int r_idx) {
-    ll best_w = -INF;
-    int best_a_idx = -1;
-    for (int i = 0; i < int(A.size()); ++i) {
-      ll w = calculate_weight(requests[r_idx], slots[A[i]], current_week);
-      if (w > best_w && w != -INF) {
-        best_w = w;
-        best_a_idx = i;
-      }
-    }
-    
-    if (best_a_idx != -1) {
-      int s_idx = A[best_a_idx];
-      L.push_back({r_idx, s_idx});
-      requests[r_idx].state = RequestState::SERVED;
-      slots[s_idx].state = SlotState::ASSIGNED;
-      A.erase(A.begin() + best_a_idx);
-    } else {
-      requests[r_idx].state = RequestState::PENDING;
-      P.push_back(r_idx);
-    }
-  }
   
   void inject_and_process_events(int current_time_block) {
     // Process P Cancellations
@@ -289,10 +242,6 @@ public:
         ++it;
       }
     }
-    
-    vector<int> freed_slots;
-    vector<int> freed_requests;
-    bool need_rematch = false;
 
     // Process A Cancellations & Reschedules
     for (auto it = A.begin(); it != A.end(); ) {
@@ -306,87 +255,60 @@ public:
         } else if (r < PROB_SLOT_RESCHEDULE) {
           int old_t = slots[*it].time_block;
           slots[*it].time_block = min(100 * 7 + 23, slots[*it].time_block + getRandomDelay());
+          slots[*it].state = SlotState::AVAILABLE;
           weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(*it + 1) + " rescheduled (available): t=" + to_string(old_t) + " -> t=" + to_string(slots[*it].time_block));
-          freed_slots.push_back(*it);
-          it = A.erase(it);
+          // Slot stays in A (time updated in-place; iterator already valid)
+          ++it;
           continue;
         }
       }
       ++it;
     }
-    
-    // Process L Breakages
+
+    // Process L Breakages — push freed resources directly back into the pools
     vector<pair<int, int>> next_L;
     for (auto& pair : L) {
       if (slots[pair.second].time_block >= current_time_block) {
         int r1 = getRandomPercentage();
         if (r1 < PROB_SLOT_CANCEL) {
-          // Slot Cancellation
+          // Slot Cancellation: orphaned request goes back to P
           slots[pair.second].state = SlotState::CANCELED;
-          freed_requests.push_back(pair.first);
+          requests[pair.first].state = RequestState::PENDING;
+          P.push_back(pair.first);
           weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " canceled (breaking assignment with Request " + to_string(pair.first + 1) + ")");
           continue;
         }
-        
+
         int r2 = getRandomPercentage();
         if (r2 < PROB_REQUEST_CANCEL) {
-          // Request Cancellation
+          // Request Cancellation: freed slot goes back to A
           requests[pair.first].state = RequestState::CANCELED;
           unserved_reasons[pair.first] = "request canceled";
-          freed_slots.push_back(pair.second);
+          slots[pair.second].state = SlotState::AVAILABLE;
+          A.push_back(pair.second);
           weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Request " + to_string(pair.first + 1) + " canceled (breaking assignment with Slot " + to_string(pair.second + 1) + ")");
           continue;
         }
-        
+
         int r3 = getRandomPercentage();
         if (r3 < PROB_SLOT_RESCHEDULE) {
-          // Slot Rescheduling (Assigned)
+          // Slot Rescheduling: both resources freed
           int old_t = slots[pair.second].time_block;
           slots[pair.second].time_block = min(100 * 7 + 23, slots[pair.second].time_block + getRandomDelay());
           slots[pair.second].state = SlotState::AVAILABLE;
           requests[pair.first].state = RequestState::PENDING;
           A.push_back(pair.second);
           P.push_back(pair.first);
-          need_rematch = true;
           weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " rescheduled (assigned): t=" + to_string(old_t) + " -> t=" + to_string(slots[pair.second].time_block) + " (Request " + to_string(pair.first + 1) + " released)");
           continue;
         }
       }
       next_L.push_back(pair);
     }
-    
     L = next_L;
-    
-    if (freed_slots.size() + freed_requests.size() > 1) {
-      need_rematch = true;
-    }
-    
-    if (need_rematch) {
-      // Re-add any freed resources before rematching
-      for (int s : freed_slots) {
-        slots[s].state = SlotState::AVAILABLE;
-        A.push_back(s);
-      }
-      for (int r : freed_requests) {
-        requests[r].state = RequestState::PENDING;
-        P.push_back(r);
-      }
-      run_core_matching();
-    } else {
-      // O(N) Greedy Assignments for isolated breakages
-      for (int s : freed_slots) greedy_assign_slot(s);
-      for (int r : freed_requests) greedy_assign_request(r);
-      
-      // Re-sort to maintain chronological pointer efficiency
-      if (!freed_slots.empty() || !freed_requests.empty()) {
-        sort(L.begin(), L.end(), [&](const pair<int, int>& a, const pair<int, int>& b) {
-          return slots[a.second].time_block < slots[b.second].time_block;
-        });
-        sort(P.begin(), P.end(), [&](int a, int b) {
-          return get_expiration_time(a) < get_expiration_time(b);
-        });
-      }
-    }
+
+    // Rerun the matching algorithm on the updated pools
+    run_core_matching();
   }
 };
 
