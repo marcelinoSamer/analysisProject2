@@ -1,0 +1,25 @@
+TEST 1: all requests can be served
+PASSED
+
+TEST 2: greedy trap, DP must serve 2 not 1
+PASSED
+
+TEST 3: older medium request beats new high request
+PASSED
+
+TEST 4: no feasible slot because topic does not match
+PASSED
+
+TEST 5: preferred mentor increases benefit
+PASSED
+
+TEST 6: same fellow can receive multiple sessions
+PASSED
+
+TEST 7: canceled request is not assigned
+PASSED
+
+TEST 8: canceled slot cannot be used
+PASSED
+
+ALL TESTS PASSED
