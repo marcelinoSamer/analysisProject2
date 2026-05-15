@@ -22,3 +22,6 @@ WEEK 6
 201:Mon10
 1
 102 python Mon10 high 0
+
+# First request has weight 22
+# Second request has weight 17

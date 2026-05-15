@@ -18,3 +18,5 @@ WEEK 10
 2
 201:Mon10 202:Mon10
 0
+
+# Only 2 slots. 3 requests. Maximize benefit.

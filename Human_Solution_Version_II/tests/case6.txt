@@ -6,3 +6,5 @@ WEEK 1
 201:Tue10
 1
 101 python Mon10 medium 0
+
+# No feasible slot

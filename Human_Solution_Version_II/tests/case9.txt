@@ -14,3 +14,5 @@ WEEK 1
 103 c++ Wed10 medium 0
 104 go Thu10 medium 0
 105 rust Fri10 medium 0
+
+# All matched

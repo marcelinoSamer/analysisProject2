@@ -142,7 +142,23 @@ public:
     current_week = w;
     for (int idx : new_reqs) P.push_back(idx);
     for (int idx : new_slots) A.push_back(idx);
-    
+
+
+    // Check if there are no matching slots for any request
+    for(auto &p : P) {
+      bool has_no_matching_slot = true;
+      for(auto &s : A) {
+        if (is_compatible(requests[p], slots[s])) {
+          has_no_matching_slot = false;
+          break;
+        }
+      }
+      if(has_no_matching_slot) {
+        requests[p].state = RequestState::CANCELED;
+        unserved_reasons[p] = "no feasible slot";
+      }
+    }
+
     // Start of the Week Execution
     run_core_matching();
     
@@ -267,6 +283,7 @@ public:
       if (getRandomPercentage() < PROB_REQUEST_CANCEL) {
         requests[*it].state = RequestState::CANCELED;
         unserved_reasons[*it] = "request canceled";
+        weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Request " + to_string(*it + 1) + " canceled (pending)");
         it = P.erase(it);
       } else {
         ++it;
@@ -283,10 +300,13 @@ public:
         int r = getRandomPercentage();
         if (r < PROB_SLOT_CANCEL) {
           slots[*it].state = SlotState::CANCELED;
+          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(*it + 1) + " canceled (available)");
           it = A.erase(it);
           continue;
         } else if (r < PROB_SLOT_RESCHEDULE) {
-          slots[*it].time_block = min(100 * 7 + 23, slots[*it].time_block + getRandomDelay()); // Simplistic reschedule
+          int old_t = slots[*it].time_block;
+          slots[*it].time_block = min(100 * 7 + 23, slots[*it].time_block + getRandomDelay());
+          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(*it + 1) + " rescheduled (available): t=" + to_string(old_t) + " -> t=" + to_string(slots[*it].time_block));
           freed_slots.push_back(*it);
           it = A.erase(it);
           continue;
@@ -304,6 +324,7 @@ public:
           // Slot Cancellation
           slots[pair.second].state = SlotState::CANCELED;
           freed_requests.push_back(pair.first);
+          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " canceled (breaking assignment with Request " + to_string(pair.first + 1) + ")");
           continue;
         }
         
@@ -313,18 +334,21 @@ public:
           requests[pair.first].state = RequestState::CANCELED;
           unserved_reasons[pair.first] = "request canceled";
           freed_slots.push_back(pair.second);
+          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Request " + to_string(pair.first + 1) + " canceled (breaking assignment with Slot " + to_string(pair.second + 1) + ")");
           continue;
         }
         
         int r3 = getRandomPercentage();
         if (r3 < PROB_SLOT_RESCHEDULE) {
           // Slot Rescheduling (Assigned)
+          int old_t = slots[pair.second].time_block;
           slots[pair.second].time_block = min(100 * 7 + 23, slots[pair.second].time_block + getRandomDelay());
           slots[pair.second].state = SlotState::AVAILABLE;
           requests[pair.first].state = RequestState::PENDING;
           A.push_back(pair.second);
           P.push_back(pair.first);
           need_rematch = true;
+          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " rescheduled (assigned): t=" + to_string(old_t) + " -> t=" + to_string(slots[pair.second].time_block) + " (Request " + to_string(pair.first + 1) + " released)");
           continue;
         }
       }

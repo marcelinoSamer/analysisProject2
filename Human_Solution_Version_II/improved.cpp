@@ -128,7 +128,7 @@ void solve() {
           string time_str = token.substr(colon_pos + 1);
           
           Slot s_obj;
-          s_obj.id = int(global_slots.size()); // ?
+          s_obj.id = int(global_slots.size());
           s_obj.mentor_id = mentor_map[m_raw];
           s_obj.mentor_topics = mentor_specialties[s_obj.mentor_id];
           s_obj.time_block = parse_time_block(time_str);
@@ -178,9 +178,35 @@ void solve() {
       sim.process_week(w, week_req_ids, week_slot_ids);
       
       // Print Weekly Assignments
+      bool has_assignments = false;
       for (const string& log : sim.weekly_logs) {
-        cout << log << "\n";
+        if (log.find("Assigned") != string::npos) {
+          has_assignments = true;
+          break;
+        }
       }
+      if (has_assignments) {
+        cout << "\n[Week " << w << "] Assignments:\n";
+        for (const string& log : sim.weekly_logs) {
+          if (log.find("Assigned") != string::npos) cout << log << "\n";
+        }
+      }
+      
+      // Print Event Timeline
+      bool has_events = false;
+      for (const string& log : sim.weekly_logs) {
+        if (log.find("[t=") != string::npos) {
+          has_events = true;
+          break;
+        }
+      }
+      if (has_events) {
+        cout << "[Week " << w << "] Event Timeline:\n";
+        for (const string& log : sim.weekly_logs) {
+          if (log.find("[t=") != string::npos) cout << log << "\n";
+        }
+      }
+      
       sim.weekly_logs.clear();
     }
   }
