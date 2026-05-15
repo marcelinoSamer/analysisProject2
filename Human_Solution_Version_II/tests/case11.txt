@@ -6,10 +6,28 @@
 WEEK 1
 0
 3
-101 python Mon10 medium 0
-102 python Mon10 medium 0
-103 python Mon10 medium 0
+1 101 python Mon10 medium 0
+2 102 python Mon10 medium 0
+3 103 python Mon10 medium 0
+0
+
+0
+1
+2:Mon10
 WEEK 2
 3
-201:Mon10 202:Mon10 203:Mon10
+1 201 Mon10
+2 202 Mon10
+3 203 Mon10
 0
+0
+
+0
+0
+
+###
+
+Request 2 got cancelled before there were any slots.
+Do not assign it.
+
+###

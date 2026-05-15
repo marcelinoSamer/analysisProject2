@@ -20,8 +20,8 @@ int get_topic_match(const Request& r, const Slot& s) {
 // Check if request r and slot s are compatible
 bool is_compatible(const Request& r, const Slot& s) {
   bool time_match = false;
-  for (int t : r.acceptable_times) {
-    if (t == s.time_block) {
+  for (auto [w, t] : r.acceptable_times) {
+    if (t == s.time_block.second) {
       time_match = true;
       break;
     }
@@ -72,9 +72,9 @@ public:
   // Logs for reasons
   vector<string> unserved_reasons;
 
-  int get_expiration_time(int r_idx) {
-    int exp_t = 0;
-    for (int acc_t : requests[r_idx].acceptable_times) {
+  pair<int, int> get_expiration_time(int r_idx) {
+    pair<int, int> exp_t = {0, 0};
+    for (pair<int, int> acc_t : requests[r_idx].acceptable_times) {
       exp_t = max(exp_t, acc_t);
     }
     return exp_t;
@@ -138,7 +138,12 @@ public:
     A = new_A;
   }
   
-  void process_week(int w, const vector<int>& new_reqs, const vector<int>& new_slots) {
+  void process_week(
+    int w, const vector<int>& new_reqs, const vector<int>& new_slots,
+    const vector<pair<int, pair<int, int>>>& slot_cancellations,
+    const vector<pair<int, pair<pair<int, int>, pair<int, int>>>>& slot_reschedules,
+    const vector<pair<int, pair<int, int>>>& req_cancellations
+  ) {
     current_week = w;
     for (int idx : new_reqs) P.push_back(idx);
     for (int idx : new_slots) A.push_back(idx);
@@ -154,7 +159,6 @@ public:
         }
       }
       if(has_no_matching_slot) {
-        requests[p].state = RequestState::CANCELED;
         unserved_reasons[p] = "no feasible slot";
       }
     }
@@ -162,16 +166,35 @@ public:
     // Start of the Week Execution
     run_core_matching();
     
-    // Collect all timeblocks
-    set<int> unique_times;
+    map<pair<int, int>, vector<int>> slot_cancels_at;
+    map<pair<int, int>, vector<pair<int, pair<int, int>>>> slot_rescheds_at;
+    map<pair<int, int>, vector<int>> req_cancels_at;
+
+    set<pair<int, int>> unique_times;
+    
+    // Collect times from existing P, A and L
     for (int r_idx : P) {
-      for (int t : requests[r_idx].acceptable_times) unique_times.insert(t);
+      for (auto t : requests[r_idx].acceptable_times) unique_times.insert(t);
     }
-    for (int s_idx : A) unique_times.insert(slots[s_idx].time_block);
+    for (auto s_idx : A) unique_times.insert(slots[s_idx].time_block);
     for (auto& pair : L) unique_times.insert(slots[pair.second].time_block);
     
+    for (const auto& c : slot_cancellations) {
+      slot_cancels_at[c.second].push_back(c.first);
+      unique_times.insert(c.second);
+    }
+    for (const auto& r : slot_reschedules) {
+      slot_rescheds_at[r.second.first].push_back({r.first, r.second.second});
+      unique_times.insert(r.second.first);
+      unique_times.insert(r.second.second);
+    }
+    for (const auto& q : req_cancellations) {
+      req_cancels_at[q.second].push_back(q.first);
+      unique_times.insert(q.second);
+    }
+    
     // Handle assignments that can be finalized as well as requests that have expired
-    for (int t : unique_times) {
+    for (auto t : unique_times) {
       // Finalize Past
       vector<pair<int, int>> next_L;
       for (auto& pair : L) {
@@ -183,26 +206,90 @@ public:
       }
       L = next_L;
       
-      // Expire Unserved
-      vector<int> next_P;
-      for (int r_idx : P) {
-        bool can_be_served_later = false;
-        for (int acc_t : requests[r_idx].acceptable_times) {
-          if (acc_t >= t) {
-            can_be_served_later = true;
-            break;
+      bool state_changed = false;
+      
+      // 1. Request Cancellations
+      if (req_cancels_at.count(t)) {
+        for (int r_idx : req_cancels_at[t]) {
+          if (requests[r_idx].state == RequestState::PENDING) {
+            auto it = find(P.begin(), P.end(), r_idx);
+            if (it != P.end()) P.erase(it);
+            requests[r_idx].state = RequestState::CANCELED;
+            unserved_reasons[r_idx] = "request canceled";
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (pending)");
+            state_changed = true;
+          } else {
+            auto it = find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p) { return p.first == r_idx; });
+            if (it != L.end()) {
+              int s_idx = it->second;
+              L.erase(it);
+              requests[r_idx].state = RequestState::CANCELED;
+              unserved_reasons[r_idx] = "request canceled";
+              slots[s_idx].state = SlotState::AVAILABLE;
+              A.push_back(s_idx);
+              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (breaking assignment with Slot " + to_string(slots[s_idx].id) + ")");
+              state_changed = true;
+            }
           }
         }
-        if (!can_be_served_later) {
-          expire_request(r_idx);
-        } else {
-          next_P.push_back(r_idx);
+      }
+
+      // 2. Slot Cancellations
+      if (slot_cancels_at.count(t)) {
+        for (int s_idx : slot_cancels_at[t]) {
+          if (slots[s_idx].state == SlotState::AVAILABLE) {
+            auto it = find(A.begin(), A.end(), s_idx);
+            if (it != A.end()) A.erase(it);
+            slots[s_idx].state = SlotState::CANCELED;
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (available)");
+            state_changed = true;
+          } else {
+            auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
+            if (it != L.end()) {
+              int r_idx = it->first;
+              L.erase(it);
+              slots[s_idx].state = SlotState::CANCELED;
+              requests[r_idx].state = RequestState::PENDING;
+              P.push_back(r_idx);
+              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (breaking assignment with Request " + to_string(requests[r_idx].id) + ")");
+              state_changed = true;
+            }
+          }
         }
       }
-      P = next_P;
+
+      // 3. Slot Reschedules
+      if (slot_rescheds_at.count(t)) {
+        for (const auto& sr : slot_rescheds_at[t]) {
+          int s_idx = sr.first;
+          auto new_t = sr.second;
+          
+          if (slots[s_idx].state == SlotState::AVAILABLE) {
+            auto old_t = slots[s_idx].time_block;
+            slots[s_idx].time_block = new_t;
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
+            state_changed = true;
+          } else {
+            auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
+            if (it != L.end()) {
+              int r_idx = it->first;
+              L.erase(it);
+              auto old_t = slots[s_idx].time_block;
+              slots[s_idx].time_block = new_t;
+              slots[s_idx].state = SlotState::AVAILABLE;
+              requests[r_idx].state = RequestState::PENDING;
+              A.push_back(s_idx);
+              P.push_back(r_idx);
+              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (assigned): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second) + " (Request " + to_string(requests[r_idx].id) + " released)");
+              state_changed = true;
+            }
+          }
+        }
+      }
       
-      // Inject Events affecting the current timeblock t or future
-      inject_and_process_events(t);
+      if (state_changed) {
+        run_core_matching();
+      }
     }
     
     // Finalize any remaining locked assignments after the week's times are over
@@ -221,95 +308,9 @@ public:
     total_benefit += (raw_weight - K);
     total_served_requests++;
     
-    weekly_logs.push_back("[Week " + to_string(current_week) + "] Assigned Request " + to_string(r_idx + 1) + " to Slot " + to_string(s_idx + 1));
-  }
-  
-  void expire_request(int r_idx) {
-    requests[r_idx].state = RequestState::CANCELED;
-    unserved_reasons[r_idx] = "no feasible slot"; 
+    weekly_logs.push_back("[Week " + to_string(current_week) + "] Assigned Request " + to_string(requests[r_idx].id) + " to Slot " + to_string(slots[s_idx].id));
   }
 
-  
-  void inject_and_process_events(int current_time_block) {
-    // Process P Cancellations
-    for (auto it = P.begin(); it != P.end(); ) {
-      if (getRandomPercentage() < PROB_REQUEST_CANCEL) {
-        requests[*it].state = RequestState::CANCELED;
-        unserved_reasons[*it] = "request canceled";
-        weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Request " + to_string(*it + 1) + " canceled (pending)");
-        it = P.erase(it);
-      } else {
-        ++it;
-      }
-    }
-
-    // Process A Cancellations & Reschedules
-    for (auto it = A.begin(); it != A.end(); ) {
-      if (slots[*it].time_block >= current_time_block) {
-        int r = getRandomPercentage();
-        if (r < PROB_SLOT_CANCEL) {
-          slots[*it].state = SlotState::CANCELED;
-          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(*it + 1) + " canceled (available)");
-          it = A.erase(it);
-          continue;
-        } else if (r < PROB_SLOT_RESCHEDULE) {
-          int old_t = slots[*it].time_block;
-          slots[*it].time_block = min(100 * 7 + 23, slots[*it].time_block + getRandomDelay());
-          slots[*it].state = SlotState::AVAILABLE;
-          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(*it + 1) + " rescheduled (available): t=" + to_string(old_t) + " -> t=" + to_string(slots[*it].time_block));
-          // Slot stays in A (time updated in-place; iterator already valid)
-          ++it;
-          continue;
-        }
-      }
-      ++it;
-    }
-
-    // Process L Breakages — push freed resources directly back into the pools
-    vector<pair<int, int>> next_L;
-    for (auto& pair : L) {
-      if (slots[pair.second].time_block >= current_time_block) {
-        int r1 = getRandomPercentage();
-        if (r1 < PROB_SLOT_CANCEL) {
-          // Slot Cancellation: orphaned request goes back to P
-          slots[pair.second].state = SlotState::CANCELED;
-          requests[pair.first].state = RequestState::PENDING;
-          P.push_back(pair.first);
-          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " canceled (breaking assignment with Request " + to_string(pair.first + 1) + ")");
-          continue;
-        }
-
-        int r2 = getRandomPercentage();
-        if (r2 < PROB_REQUEST_CANCEL) {
-          // Request Cancellation: freed slot goes back to A
-          requests[pair.first].state = RequestState::CANCELED;
-          unserved_reasons[pair.first] = "request canceled";
-          slots[pair.second].state = SlotState::AVAILABLE;
-          A.push_back(pair.second);
-          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Request " + to_string(pair.first + 1) + " canceled (breaking assignment with Slot " + to_string(pair.second + 1) + ")");
-          continue;
-        }
-
-        int r3 = getRandomPercentage();
-        if (r3 < PROB_SLOT_RESCHEDULE) {
-          // Slot Rescheduling: both resources freed
-          int old_t = slots[pair.second].time_block;
-          slots[pair.second].time_block = min(100 * 7 + 23, slots[pair.second].time_block + getRandomDelay());
-          slots[pair.second].state = SlotState::AVAILABLE;
-          requests[pair.first].state = RequestState::PENDING;
-          A.push_back(pair.second);
-          P.push_back(pair.first);
-          weekly_logs.push_back("  [t=" + to_string(current_time_block) + "] Slot " + to_string(pair.second + 1) + " rescheduled (assigned): t=" + to_string(old_t) + " -> t=" + to_string(slots[pair.second].time_block) + " (Request " + to_string(pair.first + 1) + " released)");
-          continue;
-        }
-      }
-      next_L.push_back(pair);
-    }
-    L = next_L;
-
-    // Rerun the matching algorithm on the updated pools
-    run_core_matching();
-  }
 };
 
 #endif // SIMULATION_H

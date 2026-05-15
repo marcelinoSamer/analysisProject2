@@ -7,12 +7,25 @@
 205 rust
 WEEK 1
 5
-201:Mon10 202:Tue10 203:Wed10 204:Thu10 205:Fri10
+1 201 Mon10
+2 202 Tue10
+3 203 Wed10
+4 204 Thu10
+5 205 Fri10
 5
-101 python Mon10 medium 0
-102 java Tue10 medium 0
-103 c++ Wed10 medium 0
-104 go Thu10 medium 0
-105 rust Fri10 medium 0
+1 101 python Mon10 medium 0
+2 102 java Tue10 medium 0
+3 103 c++ Wed10 medium 0
+4 104 go Thu10 medium 0
+5 105 rust Fri10 medium 0
+1
+5:Fri10
+0
+0
 
-# All matched
+###
+
+All should be matched in the beginning. Due to cancellation of slot 5, request 5
+is not assigned to any slot
+
+###

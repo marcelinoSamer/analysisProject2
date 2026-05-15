@@ -130,55 +130,46 @@ void solve() {
   ll total_benefit = 0;
 
   // Read Weeks
-  while (getline(cin, line)) {
-    if (line.empty()) continue;
-    if (line.substr(0, 4) == "WEEK") {
+  string token;
+  while (cin >> token) {
+    if (token == "WEEK") {
       int w;
-      stringstream ss(line);
-      string temp;
-      ss >> temp >> w;
+      cin >> w;
       
       // Read Slots
-      getline(cin, line);
-      int S = stoi(line);
+      int S;
+      cin >> S;
       
       vector<int> week_slot_ids;
-      if (S > 0) {
-        getline(cin, line);
-        stringstream ss_slots(line);
-        string token;
-        while (ss_slots >> token) {
-          size_t colon_pos = token.find(':');
-          int mentor = stoi(token.substr(0, colon_pos));
-          string time_b = token.substr(colon_pos + 1);
-          
-          Slot s_obj;
-          s_obj.id = int(global_slots.size());
-          s_obj.mentor_id = mentor;
-          s_obj.time_block = time_b;
-          s_obj.mentor_topics = mentor_topics[mentor];
-          s_obj.is_assigned = false;
-          
-          week_slot_ids.push_back(s_obj.id);
-          global_slots.push_back(s_obj);
-        }
+      for (int i = 0; i < S; ++i) {
+        int s_id, mentor;
+        string time_b;
+        cin >> s_id >> mentor >> time_b;
+        
+        Slot s_obj;
+        s_obj.id = s_id;
+        s_obj.mentor_id = mentor;
+        s_obj.time_block = time_b;
+        s_obj.mentor_topics = mentor_topics[mentor];
+        s_obj.is_assigned = false;
+        
+        week_slot_ids.push_back(global_slots.size());
+        global_slots.push_back(s_obj);
       }
       
       // Read Requests
-      getline(cin, line);
-      int R = stoi(line);
+      int R;
+      cin >> R;
       
       vector<int> week_req_ids;
       for (int i = 0; i < R; ++i) {
-        getline(cin, line);
-        stringstream ss_req(line);
-        int f_id, pref_m;
+        int r_id, f_id, pref_m;
         string req_topics, acc_times, urg_str;
         
-        ss_req >> f_id >> req_topics >> acc_times >> urg_str >> pref_m;
+        cin >> r_id >> f_id >> req_topics >> acc_times >> urg_str >> pref_m;
         
         Request r_obj;
-        r_obj.id = int(global_requests.size());
+        r_obj.id = r_id;
         r_obj.fellow_id = f_id;
         
         if (req_topics != "\"\"") {
@@ -198,8 +189,30 @@ void solve() {
         r_obj.preferred_mentor = pref_m;
         r_obj.submission_week = w;
         
-        week_req_ids.push_back(r_obj.id);
+        week_req_ids.push_back(global_requests.size());
         global_requests.push_back(r_obj);
+      }
+      
+      // Read and ignore dynamic events
+      int C;
+      cin >> C;
+      for (int i = 0; i < C; ++i) {
+        string dummy;
+        cin >> dummy;
+      }
+      
+      int U;
+      cin >> U;
+      for (int i = 0; i < U; ++i) {
+        string id, t1, t2;
+        cin >> id >> t1 >> t2;
+      }
+      
+      int Q;
+      cin >> Q;
+      for (int i = 0; i < Q; ++i) {
+        string dummy;
+        cin >> dummy;
       }
       
       // Collect Pending Requests and Available Slots
@@ -249,8 +262,8 @@ void solve() {
             total_benefit += (raw_weight - K);
             total_served_requests++;
             
-            cout << "[Week " << w << "] Assigned Request " << P[e.req_idx] + 1
-                 << " to Slot " << A[e.slot_idx] + 1 << "\n";
+            cout << "[Week " << w << "] Assigned Request " << global_requests[P[e.req_idx]].id
+                 << " to Slot " << global_slots[A[e.slot_idx]].id << "\n";
           }
         }
         
@@ -294,7 +307,7 @@ void solve() {
       if (reason.empty()) {
         reason = "lower priority"; 
       }
-      cout << "Request " << i + 1 << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
+      cout << "Request " << global_requests[i].id << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
     }
   }
 }

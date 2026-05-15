@@ -15,7 +15,7 @@ int get_topic_id(const string& t) {
   return topic_map[t];
 }
 
-int parse_time_block(const string& s) {
+pair<int, int> parse_time_block(const string& s, int w) {
   if (int(s.length()) < 4) {
     throw runtime_error("Invalid time block format: " + s);
   }
@@ -35,7 +35,7 @@ int parse_time_block(const string& s) {
   else if (day == "Fri") d = 5;
   else if (day == "Sat") d = 6;
   else if (day == "Sun") d = 7;
-  return d * 100 + hour;
+  return {w, d * 100 + hour};
 }
 
 vector<int> parse_topics(const string& s) {
@@ -49,13 +49,13 @@ vector<int> parse_topics(const string& s) {
   return res;
 }
 
-vector<int> parse_times(const string& s) {
-  vector<int> res;
+vector<pair<int, int>> parse_times(const string& s, int w) {
+  vector<pair<int, int>> res;
   if (s == "\"\"" || s == "") return res;
   stringstream ss(s);
   string token;
   while(getline(ss, token, ',')) {
-    res.push_back(parse_time_block(token));
+    res.push_back(parse_time_block(token, w));
   }
   return res;
 }
@@ -100,63 +100,56 @@ void solve() {
 
   vector<Request> global_requests;
   vector<Slot> global_slots;
+  unordered_map<int, int> req_id_to_idx;
+  unordered_map<int, int> slot_id_to_idx;
   
   Simulation sim(global_requests, global_slots);
 
   // Read Weeks
-  while (getline(cin, line)) {
-    if (line.empty()) continue;
-    if (line.substr(0, 4) == "WEEK") {
+  string token;
+  while (cin >> token) {
+    if (token == "WEEK") {
       int w;
-      stringstream ss(line);
-      string temp;
-      ss >> temp >> w;
+      cin >> w;
       
       // Read Slots
-      getline(cin, line);
-      int S = stoi(line);
+      int S;
+      cin >> S;
       
       vector<int> week_slot_ids;
-      if (S > 0) {
-        getline(cin, line);
-        stringstream s_ss(line);
-        string token;
-        for (int i = 0; i < S; ++i) {
-          s_ss >> token;
-          int colon_pos = int(token.find(':'));
-          int m_raw = stoi(token.substr(0, colon_pos));
-          string time_str = token.substr(colon_pos + 1);
-          
-          Slot s_obj;
-          s_obj.id = int(global_slots.size());
-          s_obj.mentor_id = mentor_map[m_raw];
-          s_obj.mentor_topics = mentor_specialties[s_obj.mentor_id];
-          s_obj.time_block = parse_time_block(time_str);
-          
-          week_slot_ids.push_back(s_obj.id);
-          global_slots.push_back(s_obj);
-        }
+      for (int i = 0; i < S; ++i) {
+        int s_id, m_raw;
+        string time_str;
+        cin >> s_id >> m_raw >> time_str;
+        
+        Slot s_obj;
+        s_obj.id = s_id;
+        s_obj.mentor_id = mentor_map[m_raw];
+        s_obj.mentor_topics = mentor_specialties[s_obj.mentor_id];
+        s_obj.time_block = parse_time_block(time_str, w);
+        
+        int idx = (int)global_slots.size();
+        slot_id_to_idx[s_id] = idx;
+        week_slot_ids.push_back(idx);
+        global_slots.push_back(s_obj);
       }
       
       // Read Requests
-      getline(cin, line);
-      int R = stoi(line);
+      int R;
+      cin >> R;
       
       vector<int> week_req_ids;
       for (int i = 0; i < R; ++i) {
-        getline(cin, line);
-        stringstream r_ss(line);
-        int f_raw;
+        int r_id, f_raw, pref_m_raw;
         string t_list, times_list, urg_str;
-        int pref_m_raw;
         
-        r_ss >> f_raw >> t_list >> times_list >> urg_str >> pref_m_raw;
+        cin >> r_id >> f_raw >> t_list >> times_list >> urg_str >> pref_m_raw;
         
         Request r_obj;
-        r_obj.id = int(global_requests.size());
+        r_obj.id = r_id;
         r_obj.fellow_id = fellow_map[f_raw];
         r_obj.required_topics = parse_topics(t_list);
-        r_obj.acceptable_times = parse_times(times_list);
+        r_obj.acceptable_times = parse_times(times_list, w);
         r_obj.submission_week = w;
         
         if (urg_str == "high") r_obj.urgency = Urgency::HIGH;
@@ -169,13 +162,56 @@ void solve() {
           r_obj.preferred_mentor = 0;
         }
         
-        week_req_ids.push_back(r_obj.id);
+        int idx = (int)global_requests.size();
+        req_id_to_idx[r_id] = idx;
+        week_req_ids.push_back(idx);
         global_requests.push_back(r_obj);
-        sim.unserved_reasons.push_back(""); // Match size
+        sim.unserved_reasons.push_back("");
+      }
+      
+      // Parse events
+      int C;
+      cin >> C;
+      vector<pair<int, pair<int, int>>> slot_cancellations;
+      for (int i = 0; i < C; ++i) {
+        string s;
+        cin >> s;
+        size_t colon_pos = s.find(':');
+        int s_id = stoi(s.substr(0, colon_pos));
+        pair<int, int> t = parse_time_block(s.substr(colon_pos + 1), w);
+        if (slot_id_to_idx.count(s_id)) {
+            slot_cancellations.push_back({slot_id_to_idx[s_id], t});
+        }
+      }
+      
+      int U;
+      cin >> U;
+      vector<pair<int, pair<pair<int, int>, pair<int, int>>>> slot_reschedules;
+      for (int i = 0; i < U; ++i) {
+        int s_id;
+        string t_old_str, t_new_str;
+        cin >> s_id >> t_old_str >> t_new_str;
+        if (slot_id_to_idx.count(s_id)) {
+            slot_reschedules.push_back({slot_id_to_idx[s_id], {parse_time_block(t_old_str, w), parse_time_block(t_new_str, w)}});
+        }
+      }
+      
+      int Q;
+      cin >> Q;
+      vector<pair<int, pair<int, int>>> req_cancellations;
+      for (int i = 0; i < Q; ++i) {
+        string s;
+        cin >> s;
+        size_t colon_pos = s.find(':');
+        int r_id = stoi(s.substr(0, colon_pos));
+        pair<int, int> t = parse_time_block(s.substr(colon_pos + 1), w);
+        if (req_id_to_idx.count(r_id)) {
+          req_cancellations.push_back({req_id_to_idx[r_id], t});
+        }
       }
       
       // Process the week
-      sim.process_week(w, week_req_ids, week_slot_ids);
+      sim.process_week(w, week_req_ids, week_slot_ids, slot_cancellations, slot_reschedules, req_cancellations);
       
       // Print Weekly Assignments
       bool has_assignments = false;
@@ -225,7 +261,7 @@ void solve() {
         // and it's still pending at the end of the program
         reason = "lower priority"; 
       }
-      cout << "Request " << i + 1 << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
+      cout << "Request " << global_requests[i].id << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
     }
   }
 }

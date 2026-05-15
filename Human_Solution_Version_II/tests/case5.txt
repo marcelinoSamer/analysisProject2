@@ -3,10 +3,17 @@
 201 python database
 WEEK 1
 1
-201:Mon10
+1 201 Mon10
 2
-101 python,database Mon10 medium 0
-102 python,api Mon10 medium 0
+1 101 python,database Mon10 medium 0
+2 102 python,api Mon10 medium 0
+0
 
-# 1 slot. 2 requests.
-# Request 1 gets the slot since it has more topic matching
+0
+0
+
+###
+
+Assign the request the maximizes benefit due to topic match
+
+###

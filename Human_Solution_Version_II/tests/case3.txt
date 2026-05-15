@@ -5,18 +5,44 @@
 WEEK 7
 0
 1
-101 python Mon10 medium 0
+1 101 python Mon10 medium 0
+0
+
+0
+0
+
 WEEK 8
 0
 1
-102 python Mon10 medium 0
+2 102 python Mon10 medium 0
+0
+
+0
+0
+
 WEEK 9
 0
 1
-101 python Mon10 medium 0
-WEEK 10
-2
-201:Mon10 202:Mon10
+3 101 python Mon10 medium 0
 0
 
-# Only 2 slots. 3 requests. Maximize benefit.
+0
+0
+
+WEEK 10
+2
+1 201 Mon10
+2 202 Mon10
+0
+0
+
+0
+0
+
+###
+
+3 requests and 2 slots
+Maximize benefit as testcase 2
+Request 3 is not assigned
+
+###

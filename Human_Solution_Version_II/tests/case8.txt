@@ -3,8 +3,26 @@
 201 python
 WEEK 1
 1
-201:Tue14
+1 201 Tue14
 1
-101 python Mon10 medium 0
+1 101 python Mon10 medium 0
+0
 
-# No feasible slot
+0
+0
+
+WEEK 2
+0
+0
+0
+
+1
+1 Mon9 Mon10
+0
+
+###
+
+Slot 1 got rescheduled to fit the only request.
+Request must be assigned to it
+
+###
