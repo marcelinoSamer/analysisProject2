@@ -225,6 +225,8 @@ void backtracking_solution(
       }
     }
   }; backtrack(backtrack, 0);
+
+  cout << "Minimum Cost: " << min_cost << endl;
 }
 
 // Function to implement greedy huristic solution
@@ -326,6 +328,7 @@ void greedy_heuristic_solution(
     assignments[best_req] = slot_id;
     request_taken[best_req] = true;
   }
+
 }
 int main() {
 

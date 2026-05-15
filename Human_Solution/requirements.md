@@ -4,9 +4,9 @@
 
 The system schedules academic help requests from students/fellows into a limited set of fixed weekly TA or mentor office-hour slots. Each request asks for help on a specific topic, has a submitted week, an urgency level, and a list of slots the student can attend. Each slot belongs to one mentor and happens in a specific week.
 
-The concrete problem is: given many student help requests over a multi-week planning horizon and a fixed set of mentor slots, assign as many requests as possible to feasible slots while reducing unfair waiting time, especially for urgent requests.
+The concrete problem is: given many student help requests over a multi-week planning line and a fixed set of mentor slots, assign as many requests as possible to feasible slots while reducing unfair waiting time, especially for urgent requests.
 
-This is not a flexible calendar-building problem. The system does not create new slots or move existing ones. It chooses among already-existing weekly slots. The current implementation also treats each slot as having capacity one, so a slot can serve at most one request.
+This is not a flexible calendar-building problem. The system does not create new slots or move existing ones. It chooses among already-existing weekly slots.
 
 ## 2. Inputs and Outputs
 
@@ -25,7 +25,7 @@ The urgency levels are:
 - `normal`: medium priority.
 - `blocker`: high priority.
 
-In the current input format, the first line gives:
+The first line contains $4$ integers:
 
 ```text
 F M S R
