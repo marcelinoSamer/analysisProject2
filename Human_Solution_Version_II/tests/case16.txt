@@ -1,0 +1,39 @@
+101 102 103 104 105 106 107 108
+201 202 203 204 205 206
+201 python database java
+202 networking api security
+203 python ml cloud
+204 database networking java
+205 api ml security
+206 python cloud java
+WEEK 1
+6
+201:Mon10 202:Mon10 203:Tue14 204:Tue14 205:Wed11 206:Wed11
+8
+101 python Mon10,Tue14,Wed11 high 201
+102 networking Mon10 medium 202
+103 java Mon10,Wed11 high 204
+104 ml Tue14,Wed11 high 203
+105 api Wed11 medium 205
+106 cloud Tue14,Wed11 medium 203
+107 database Mon10,Tue14 high 204
+108 security Mon10 low 202
+WEEK 2
+5
+202:Mon10 203:Mon10 204:Wed11 205:Thu09 206:Thu09
+6
+101 cloud Mon10,Thu09 high 203
+102 ml Mon10 medium 0
+103 java Wed11,Thu09 high 206
+104 api Thu09 medium 205
+105 security Mon10 high 202
+106 python Mon10,Thu09 medium 206
+WEEK 3
+4
+201:Mon10 203:Wed11 204:Wed11 205:Fri10
+5
+101 python,database Mon10 high 201
+102 networking Wed11 medium 204
+103 java,python Wed11 high 0
+107 api Fri10 medium 205
+108 ml Wed11 high 203

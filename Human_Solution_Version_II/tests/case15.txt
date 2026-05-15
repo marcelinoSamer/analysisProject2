@@ -1,0 +1,39 @@
+101 102 103 104 105 106
+201 202 203
+201 python database
+202 networking api
+203 java cloud
+WEEK 1
+0
+4
+101 python Mon10 high 201
+102 networking Mon10 medium 0
+103 java Mon10 low 203
+104 database Mon10 medium 201
+WEEK 2
+0
+3
+101 python Mon10 high 0
+102 api Mon10 high 202
+105 java Mon10 low 203
+WEEK 3
+0
+3
+103 networking Mon10 medium 202
+104 database Mon10 high 201
+106 cloud Mon10 low 203
+WEEK 4
+0
+2
+101 python Mon10 medium 0
+105 java Mon10 high 203
+WEEK 5
+4
+201:Mon10 202:Mon10 203:Mon10 201:Tue14
+0
+WEEK 6
+0
+3
+101 python Mon10,Tue14 high 201
+102 networking Mon10 medium 0
+106 cloud Mon10 low 203
