@@ -1,0 +1,30 @@
+# Six requests want 'ml' but only mentor 2 covers it and they have 2 slots.
+# Two more requests want easily-covered topics. Verifies the algorithm picks
+# the two highest-priority ml requests and leaves four unserved.
+type,a,b,c,d,e
+meta,current_week,2
+meta,solver,improved
+mentor,1,algorithms;systems
+mentor,2,ml
+mentor,3,cyber
+slot,1,2
+slot,1,2
+slot,2,2
+slot,2,2
+slot,3,2
+fellow,1,0
+fellow,2,1
+fellow,3,2
+fellow,4,0
+fellow,5,1
+fellow,6,0
+fellow,7,0
+fellow,8,0
+request,1,ml,blocker,2,0;1;2;3;4
+request,2,ml,blocker,2,0;1;2;3
+request,3,ml,normal,2,0;1;2;3
+request,4,ml,exploratory,2,2;3
+request,5,ml,normal,2,2;3
+request,6,ml,exploratory,2,2;3
+request,7,algorithms,blocker,2,0;1
+request,8,cyber,normal,2,4

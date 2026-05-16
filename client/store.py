@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 URGENCY_LEVELS = ("exploratory", "normal", "blocker")
 URGENCY_WEIGHT = {"exploratory": 1, "normal": 2, "blocker": 3}
+SUPPORTED_SOLVERS = ("baseline", "improved", "ai")
 
 
 @dataclass
@@ -72,6 +73,9 @@ def _penalty(urgency: str, delay: int) -> int:
 class HotStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        # The "saved snapshot" lives outside flush() so a reset doesn't wipe it.
+        self._saved_snapshot_csv: Optional[str] = None
+        self._saved_snapshot_label: Optional[str] = None
         self.flush()
 
     # ------------------------------------------------------------------ basics
@@ -89,8 +93,10 @@ class HotStore:
 
     # ----------------------------------------------------------------- mutators
     def set_solver(self, name: str) -> None:
-        if name not in ("baseline", "improved"):
-            raise ValueError(f"Unknown solver '{name}'")
+        if name not in SUPPORTED_SOLVERS:
+            raise ValueError(
+                f"Unknown solver '{name}'. Expected one of {SUPPORTED_SOLVERS}"
+            )
         with self._lock:
             self.active_solver = name
 
@@ -142,9 +148,12 @@ class HotStore:
         topic: str,
         urgency: str,
         week: Optional[int] = None,
-    ) -> int:
+    ) -> Tuple[int, List[str]]:
         if urgency not in URGENCY_LEVELS:
             raise ValueError(f"Bad urgency '{urgency}'. Expected one of {URGENCY_LEVELS}")
+        topic_norm = topic.strip().lower()
+        if not topic_norm:
+            raise ValueError("Topic must not be empty")
         with self._lock:
             if fellow_id not in self.fellows:
                 self.add_fellow(fellow_id)
@@ -158,12 +167,96 @@ class HotStore:
             req = Request(
                 fellow_id=fellow_id,
                 available_slot_ids=list(available_slot_ids),
-                topic=topic.strip().lower(),
+                topic=topic_norm,
                 urgency=urgency,
                 week=self.current_week if week is None else week,
             )
             self.requests.append(req)
-            return len(self.requests) - 1
+            warnings = self._feasibility_warnings(req)
+            return len(self.requests) - 1, warnings
+
+    # ----------------------------------------------------- feasibility helpers
+    def _feasibility_warnings(self, req: Request) -> List[str]:
+        """Return human-readable warnings about why *req* may be infeasible.
+
+        These are intentionally soft warnings — the C++ backends handle every
+        case below gracefully (the request just ends up `Not Assigned`). They
+        let the UI flag known-bad inputs early so the user knows what to
+        expect before they hit Solve.
+        """
+        warnings: List[str] = []
+        topic = req.topic
+        covering_mentors = [mid for mid, spec in self.mentors.items() if topic in spec]
+        if not covering_mentors:
+            warnings.append(
+                f"No mentor lists '{topic}' as a specialty. "
+                "Request will be classified as infeasibly unserved."
+            )
+            return warnings
+
+        compatible_slot_ids: List[int] = []
+        for sid in req.available_slot_ids:
+            if not (0 <= sid < len(self.slots)):
+                continue
+            mentor_id = self.slots[sid].mentor_id
+            if mentor_id in covering_mentors and self.slots[sid].week >= req.week:
+                compatible_slot_ids.append(sid)
+        if not compatible_slot_ids:
+            warnings.append(
+                f"None of the listed slots are owned by a mentor that covers "
+                f"'{topic}' for week ≥ {req.week}. The request can never be "
+                "satisfied with the current slot/mentor lineup."
+            )
+        elif len(compatible_slot_ids) < len(req.available_slot_ids):
+            dropped = len(req.available_slot_ids) - len(compatible_slot_ids)
+            warnings.append(
+                f"{dropped} of the {len(req.available_slot_ids)} listed slot(s) "
+                f"are not viable for '{topic}' (wrong mentor or earlier week)."
+            )
+        return warnings
+
+    def validate_request(
+        self,
+        fellow_id: int,
+        available_slot_ids: List[int],
+        topic: str,
+        urgency: str,
+        week: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Dry-run the same validation/feasibility logic as submit_request,
+        but without mutating any state. Used by the UI for live previews.
+        """
+        info: Dict[str, Any] = {"errors": [], "warnings": [], "ok": True}
+        topic_norm = (topic or "").strip().lower()
+        urgency_norm = (urgency or "").strip().lower()
+        if urgency_norm and urgency_norm not in URGENCY_LEVELS:
+            info["errors"].append(
+                f"Urgency must be one of {URGENCY_LEVELS} (got {urgency_norm!r})."
+            )
+        if not topic_norm:
+            info["errors"].append("Topic must not be empty.")
+        with self._lock:
+            for sid in available_slot_ids:
+                if not (0 <= sid < len(self.slots)):
+                    info["errors"].append(f"Slot {sid} does not exist.")
+            if any(r.fellow_id == fellow_id for r in self.requests):
+                info["errors"].append(
+                    f"Fellow {fellow_id} already has a pending request for the "
+                    "current week."
+                )
+            if not info["errors"] and topic_norm and urgency_norm in URGENCY_LEVELS:
+                preview = Request(
+                    fellow_id=fellow_id,
+                    available_slot_ids=list(available_slot_ids),
+                    topic=topic_norm,
+                    urgency=urgency_norm,
+                    week=self.current_week if week is None else week,
+                )
+                info["warnings"] = self._feasibility_warnings(preview)
+            info["known_topics"] = sorted({t for spec in self.mentors.values() for t in spec})
+        if info["errors"]:
+            info["ok"] = False
+        return info
 
     def remove_request(self, request_idx: int) -> None:
         with self._lock:
@@ -239,8 +332,15 @@ class HotStore:
     # ----------------------------------------------------------------- snapshot
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
+            known_topics = sorted({t for spec in self.mentors.values() for t in spec})
+            req_dicts: List[Dict[str, Any]] = []
+            for rid, r in enumerate(self.requests):
+                d = {"request_id": rid, **r.to_dict()}
+                d["warnings"] = self._feasibility_warnings(r)
+                req_dicts.append(d)
             return {
                 "active_solver": self.active_solver,
+                "supported_solvers": list(SUPPORTED_SOLVERS),
                 "current_week": self.current_week,
                 "fellows": sorted(self.fellows),
                 "starvation": dict(self.starvation),
@@ -251,15 +351,33 @@ class HotStore:
                 "slots": [
                     {"slot_id": sid, **s.to_dict()} for sid, s in enumerate(self.slots)
                 ],
-                "requests": [
-                    {"request_id": rid, **r.to_dict()} for rid, r in enumerate(self.requests)
-                ],
+                "requests": req_dicts,
                 "schedule": {
                     str(w): rows for w, rows in sorted(self.schedule.items())
                 },
                 "solver_runs": [r.to_dict() for r in self.solver_runs[-50:]],
                 "urgency_levels": list(URGENCY_LEVELS),
+                "known_topics": known_topics,
+                "saved_snapshot": {
+                    "available": self._saved_snapshot_csv is not None,
+                    "label": self._saved_snapshot_label,
+                },
             }
+
+    # -------------------------------------------------------- snapshot / reset
+    def reset_to_snapshot(self) -> Dict[str, int]:
+        """Restore the last imported CSV. Solver runs and progress made since
+        the import are discarded."""
+        with self._lock:
+            if self._saved_snapshot_csv is None:
+                raise ValueError(
+                    "No snapshot is saved yet — import a CSV first to capture one."
+                )
+            csv_text = self._saved_snapshot_csv
+            label = self._saved_snapshot_label
+        # load_from_csv re-saves the same CSV; preserve its label.
+        summary = self.load_from_csv(csv_text, label=label)
+        return summary
 
     # ----------------------------------------------------------- backend payload
     def build_solver_input(self) -> Tuple[str, List[Request], List[Slot]]:
@@ -297,13 +415,14 @@ class HotStore:
             return "\n".join(lines) + "\n", requests, slots
 
     # --------------------------------------------------------------- CSV import
-    def load_from_csv(self, csv_text: str) -> Dict[str, int]:
+    def load_from_csv(self, csv_text: str, label: Optional[str] = None) -> Dict[str, int]:
         """Replace the current hot state with the contents of *csv_text*.
 
         Format is a multi-section CSV where every row's first column is a type
         tag. See sample.csv for the canonical layout.
 
-        Returns a small summary dict for the UI.
+        Returns a small summary dict for the UI. The CSV is also stored as the
+        "saved snapshot" so the Reset button can restore it later.
         """
         import csv
         import io
@@ -356,10 +475,11 @@ class HotStore:
                 raise ValueError(f"Unknown row type '{kind}' in CSV")
 
         with self._lock:
+            prior_solver = self.active_solver
             self.flush()
             self.current_week = int(parsed["meta"].get("current_week", 0))
-            self.active_solver = parsed["meta"].get("solver", self.active_solver).lower()
-            if self.active_solver not in ("baseline", "improved"):
+            self.active_solver = parsed["meta"].get("solver", prior_solver).lower()
+            if self.active_solver not in SUPPORTED_SOLVERS:
                 self.active_solver = "improved"
 
             for mid, spec in parsed["mentors"]:
@@ -372,6 +492,9 @@ class HotStore:
             for fid, slot_ids, topic, urgency, week in parsed["requests"]:
                 self.submit_request(fid, slot_ids, topic, urgency, week)
 
+            self._saved_snapshot_csv = csv_text
+            self._saved_snapshot_label = label
+
             return {
                 "fellows": len(self.fellows),
                 "mentors": len(self.mentors),
@@ -379,4 +502,5 @@ class HotStore:
                 "requests": len(self.requests),
                 "current_week": self.current_week,
                 "solver": self.active_solver,
+                "snapshot_label": label,
             }

@@ -1,0 +1,16 @@
+# Spec's Case 3 (Starvation Rescue): one slot, contested by a starved
+# exploratory fellow (sf=3) and a fresh blocker (sf=0). Under the spec's
+# w*(sf+1)^2 penalty model the algorithm should prefer the starved fellow
+# (cost-of-skipping 1*16=16 vs 3*1=3). Note: the Human_Solution backends use a
+# delay-based penalty model so they'll typically pick the blocker on this
+# case; the AI backend is starvation-aware. Useful to demonstrate the
+# algorithmic differences between the three solvers via the switch.
+type,a,b,c,d,e
+meta,current_week,4
+meta,solver,ai
+mentor,1,algorithms
+slot,1,4
+fellow,1,3
+fellow,2,0
+request,1,algorithms,exploratory,4,0
+request,2,algorithms,blocker,4,0

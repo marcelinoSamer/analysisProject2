@@ -53,11 +53,43 @@ function render() {
     btn.classList.toggle("active", btn.dataset.solver === STATE.active_solver);
   });
 
+  // Populate the topic autocomplete datalist
+  const dataList = $("#known-topics");
+  if (dataList) {
+    dataList.innerHTML = "";
+    (STATE.known_topics || []).forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t;
+      dataList.appendChild(opt);
+    });
+  }
+
+  // Snapshot status + Reset button availability
+  const snap = STATE.saved_snapshot || { available: false };
+  const status = $("#snapshot-status");
+  const resetBtn = $("#btn-reset");
+  if (status) {
+    if (snap.available) {
+      status.classList.add("has-snapshot");
+      status.textContent = snap.label
+        ? `Snapshot loaded: ${snap.label}`
+        : "Snapshot loaded (pasted CSV).";
+    } else {
+      status.classList.remove("has-snapshot");
+      status.textContent = "No snapshot loaded yet.";
+    }
+  }
+  if (resetBtn) resetBtn.disabled = !snap.available;
+
   // Pending requests table
   const reqBody = $("#table-requests tbody");
   reqBody.innerHTML = "";
   STATE.requests.forEach((r) => {
     const tr = document.createElement("tr");
+    const warnings = r.warnings || [];
+    const statusCell = warnings.length
+      ? `<span class="chip chip-warn" title="${warnings.join('\n').replace(/"/g, '&quot;')}">infeasible</span>`
+      : `<span class="chip chip-ok">ready</span>`;
     tr.innerHTML = `
       <td>${r.request_id}</td>
       <td>${r.fellow_id}</td>
@@ -65,11 +97,12 @@ function render() {
       <td>${chipFor(r.urgency)}</td>
       <td>${r.available_slot_ids.join(", ") || "—"}</td>
       <td>${r.week}</td>
+      <td>${statusCell}</td>
       <td><button class="icon" data-action="del-request" data-id="${r.request_id}">✕</button></td>`;
     reqBody.appendChild(tr);
   });
   if (!STATE.requests.length) {
-    reqBody.innerHTML = `<tr><td colspan="7" class="empty">No requests queued for week ${STATE.current_week}.</td></tr>`;
+    reqBody.innerHTML = `<tr><td colspan="8" class="empty">No requests queued for week ${STATE.current_week}.</td></tr>`;
   }
 
   // Mentors table
@@ -213,14 +246,64 @@ function readFormJSON(form) {
   return out;
 }
 
+let _validateTimer = null;
+function scheduleValidation() {
+  clearTimeout(_validateTimer);
+  _validateTimer = setTimeout(runValidation, 200);
+}
+
+async function runValidation() {
+  const form = $("#form-request");
+  if (!form) return;
+  const body = readFormJSON(form);
+  const box = $("#request-validation");
+  if (!body.fellow_id && !body.topic && !body.available_slot_ids) {
+    box.classList.add("hidden");
+    return;
+  }
+  let res;
+  try {
+    res = await fetch("/api/validate_request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  } catch (_) {
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden", "ok", "warn", "err");
+  const errs = res.errors || [];
+  const warns = res.warnings || [];
+  if (errs.length) {
+    box.classList.add("err");
+    box.innerHTML = `<strong>Won't submit:</strong><ul>${errs.map((m) => `<li>${m}</li>`).join("")}</ul>`;
+  } else if (warns.length) {
+    box.classList.add("warn");
+    box.innerHTML = `<strong>Will queue, but heads up:</strong><ul>${warns.map((m) => `<li>${m}</li>`).join("")}</ul>`;
+  } else if (body.topic && body.available_slot_ids) {
+    box.classList.add("ok");
+    box.textContent = "Looks feasible — at least one of the listed slots can satisfy this request.";
+  } else {
+    box.classList.add("hidden");
+  }
+}
+
 function bindForms() {
-  $("#form-request").addEventListener("submit", async (e) => {
+  const reqForm = $("#form-request");
+  reqForm.addEventListener("input", scheduleValidation);
+  reqForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = readFormJSON(e.target);
     try {
-      await api("/api/request", { method: "POST", body });
+      const res = await api("/api/request", { method: "POST", body });
       e.target.reset();
-      showToast("Request queued");
+      $("#request-validation").classList.add("hidden");
+      if ((res.warnings || []).length) {
+        showToast(`Queued with warnings: ${res.warnings[0]}`, "warn" /* not a real toast class, falls back to ok */);
+      } else {
+        showToast("Request queued");
+      }
       await refresh();
     } catch (_) {}
   });
@@ -315,10 +398,23 @@ function bindButtons() {
   });
 
   $("#btn-flush").addEventListener("click", async () => {
-    if (!confirm("Flush all state? This cannot be undone.")) return;
+    if (!confirm("Flush the current week state? The saved snapshot will be kept so you can still reset to it.")) return;
     try {
       await api("/api/flush", { method: "POST" });
       showToast("Flushed");
+      await refresh();
+    } catch (_) {}
+  });
+
+  $("#btn-reset").addEventListener("click", async () => {
+    if (!STATE || !STATE.saved_snapshot || !STATE.saved_snapshot.available) {
+      showToast("No snapshot to reset to", "warn");
+      return;
+    }
+    if (!confirm("Reset to the imported snapshot? Any solves and edits made since the import will be discarded.")) return;
+    try {
+      const res = await api("/api/reset", { method: "POST" });
+      showToast(`Reset to ${res.summary.snapshot_label || "snapshot"}`);
       await refresh();
     } catch (_) {}
   });
@@ -355,10 +451,56 @@ function bindButtons() {
   });
 }
 
+async function loadTestCases() {
+  const container = $("#test-case-list");
+  if (!container) return;
+  let cases = [];
+  try {
+    const res = await api("/api/test_cases");
+    cases = res.cases || [];
+  } catch (_) { return; }
+
+  if (!cases.length) {
+    container.innerHTML = `<p class="empty">No built-in test cases discovered. Drop a CSV into <code>client/tests/</code> and reload.</p>`;
+    return;
+  }
+  container.innerHTML = "";
+  cases.forEach((c) => {
+    const btn = document.createElement("button");
+    btn.className = "test-case";
+    btn.innerHTML = `
+      <div class="tc-title">${c.title} <code style="opacity:0.6">${c.name}</code></div>
+      <div class="tc-desc">${c.description || "—"}</div>`;
+    btn.addEventListener("click", async () => {
+      try {
+        const res = await api("/api/load_test_case", { method: "POST", body: { name: c.name } });
+        showToast(`Loaded test case "${c.title}"`);
+        // Surface a small summary in the import-result card too.
+        const card = $("#import-result");
+        if (card) {
+          card.classList.remove("hidden", "err");
+          card.classList.add("ok");
+          card.textContent =
+            `Loaded ${c.name}:\n` +
+            `  fellows:  ${res.summary.fellows}\n` +
+            `  mentors:  ${res.summary.mentors}\n` +
+            `  slots:    ${res.summary.slots}\n` +
+            `  pending:  ${res.summary.requests}\n` +
+            `  week:     ${res.summary.current_week}\n` +
+            `  solver:   ${res.summary.solver}`;
+        }
+        await refresh();
+      } catch (_) {}
+    });
+    container.appendChild(btn);
+  });
+}
+
 (async function init() {
   bindTabs();
   bindSolverSwitch();
   bindForms();
   bindButtons();
   await refresh();
+  await loadTestCases();
 })();

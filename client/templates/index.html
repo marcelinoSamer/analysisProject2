@@ -22,8 +22,9 @@
     <div class="solver-switch" title="Switch the scheduling backend mid-run to compare performance">
       <span class="switch-label">Solver:</span>
       <div class="switch" id="solver-switch" role="tablist">
-        <button data-solver="baseline" class="switch-btn" role="tab">Baseline</button>
-        <button data-solver="improved" class="switch-btn active" role="tab">Improved</button>
+        <button data-solver="baseline" class="switch-btn" role="tab" title="Exhaustive backtracking (Human_Solution/baseline.cpp)">Baseline</button>
+        <button data-solver="improved" class="switch-btn active" role="tab" title="Preprocessed backtracking + greedy fallback (Human_Solution/improved.cpp)">Improved</button>
+        <button data-solver="ai" class="switch-btn" role="tab" title="Scarcity-aware greedy (AI_Solution/main.cpp)">AI</button>
       </div>
     </div>
   </header>
@@ -48,7 +49,8 @@
               <input name="fellow_id" type="number" min="0" required />
             </label>
             <label>Topic
-              <input name="topic" type="text" placeholder="e.g. algorithms" required />
+              <input name="topic" type="text" list="known-topics" placeholder="e.g. algorithms" required autocomplete="off" />
+              <datalist id="known-topics"></datalist>
             </label>
             <label>Urgency
               <select name="urgency">
@@ -63,6 +65,7 @@
             <label>Week <span class="hint inline">(blank = current week)</span>
               <input name="week" type="number" min="0" />
             </label>
+            <div id="request-validation" class="validation-box hidden"></div>
             <button type="submit" class="primary">Queue request</button>
           </form>
         </div>
@@ -70,7 +73,7 @@
         <div class="card">
           <h2>Pending requests this week</h2>
           <table id="table-requests">
-            <thead><tr><th>#</th><th>Fellow</th><th>Topic</th><th>Urgency</th><th>Slots</th><th>Week</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Fellow</th><th>Topic</th><th>Urgency</th><th>Slots</th><th>Week</th><th>Status</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
           <div class="row" style="margin-top:14px;gap:10px">
@@ -162,23 +165,42 @@
     <section class="panel hidden" id="tab-io">
       <div class="row">
         <div class="card">
+          <h2>Built-in test cases</h2>
+          <p class="hint">Quick-load one of the canned edge-case scenarios. Each one becomes the saved snapshot, so you can keep tweaking and hit <strong>Reset</strong> to return to it.</p>
+          <div id="test-case-list" class="test-case-list">
+            <p class="empty">No built-in test cases discovered.</p>
+          </div>
+        </div>
+
+        <div class="card">
           <h2>Import a mid-lifecycle CSV</h2>
-          <p class="hint">Replaces the current hot state. See <code>sample.csv</code> for the format.</p>
+          <p class="hint">Replaces the current hot state and saves the CSV as the resettable snapshot. See <code>sample.csv</code> for the format.</p>
           <form id="form-import" enctype="multipart/form-data">
             <label>CSV file
               <input type="file" name="file" accept=".csv,text/csv,text/plain" />
             </label>
             <p class="hint" style="margin:6px 0 4px">…or paste CSV directly:</p>
-            <textarea name="csv" rows="9" placeholder="type,...\nmentor,1,algorithms;ml\nslot,1,0\n..."></textarea>
+            <textarea name="csv" rows="8" placeholder="type,...&#10;mentor,1,algorithms;ml&#10;slot,1,0&#10;..."></textarea>
             <button type="submit" class="primary">Load snapshot</button>
           </form>
           <div id="import-result" class="result-card hidden"></div>
         </div>
 
         <div class="card">
-          <h2>Flush the world</h2>
-          <p class="hint">Wipes all fellows, mentors, slots, requests, history and resets the week counter to 0.</p>
-          <button id="btn-flush" class="danger big">Flush everything</button>
+          <h2>Snapshot &amp; flush controls</h2>
+          <p class="hint">
+            <strong>Reset to snapshot</strong> restores the most recently imported
+            CSV without re-uploading it, throwing away any solves or edits made
+            since the import. <strong>Flush</strong> wipes the current week
+            state (mentors, slots, fellows, requests, schedule, run history) and
+            resets the week counter to 0, but keeps the saved snapshot so you
+            can still reset to it afterward.
+          </p>
+          <div id="snapshot-status" class="snapshot-status">No snapshot loaded yet.</div>
+          <div class="row" style="gap:10px;margin-top:14px">
+            <button id="btn-reset" class="primary big" disabled>Reset to snapshot</button>
+            <button id="btn-flush" class="danger big">Flush everything</button>
+          </div>
         </div>
       </div>
     </section>

@@ -30,4 +30,10 @@ echo "Building baseline -> $OUT_DIR/baseline"
 echo "Building improved -> $OUT_DIR/improved"
 "$CXX" "${COMMON_FLAGS[@]}" "$SRC_DIR/improved.cpp" -o "$OUT_DIR/improved"
 
+# AI backend: a tiny adapter (client/cpp/ai_adapter.cpp) pulls in
+# AI_Solution/main.cpp unchanged and exposes the ScarcityAwareGreedySolver
+# via the same stdin/stdout contract the other two backends use.
+echo "Building ai -> $OUT_DIR/ai"
+"$CXX" "${COMMON_FLAGS[@]}" "$SHIM_DIR/ai_adapter.cpp" -o "$OUT_DIR/ai"
+
 echo "Done."

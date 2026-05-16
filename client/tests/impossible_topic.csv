@@ -1,0 +1,23 @@
+# Two requests are impossible: nobody covers 'quantum' (request 1) and the
+# 'systems' specialty exists on a mentor but request 2's available slots are
+# all owned by an unrelated mentor. Two more requests are feasible and should
+# succeed. Exercises the UI's infeasibility warnings as well as the backends'
+# "Not Assigned" output.
+type,a,b,c,d,e
+meta,current_week,3
+meta,solver,improved
+mentor,1,algorithms;ml
+mentor,2,systems
+mentor,3,cyber
+slot,1,3
+slot,1,4
+slot,2,3
+slot,3,3
+fellow,1,1
+fellow,2,2
+fellow,3,0
+fellow,4,0
+request,1,quantum,blocker,3,0;1;2;3
+request,2,systems,normal,3,0;1;3
+request,3,algorithms,normal,3,0;1
+request,4,cyber,exploratory,3,3

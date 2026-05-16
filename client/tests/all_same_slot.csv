@@ -1,0 +1,18 @@
+# All 5 fellows request the same single slot. At most one can be served; the
+# other four MUST end up unassigned. Good test for tie-breaking by urgency and
+# starvation.
+type,a,b,c,d,e
+meta,current_week,2
+meta,solver,improved
+mentor,1,algorithms
+slot,1,2
+fellow,1,0
+fellow,2,1
+fellow,3,2
+fellow,4,0
+fellow,5,3
+request,1,algorithms,normal,2,0
+request,2,algorithms,normal,2,0
+request,3,algorithms,exploratory,2,0
+request,4,algorithms,blocker,2,0
+request,5,algorithms,exploratory,2,0

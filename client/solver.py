@@ -25,7 +25,7 @@ CLIENT_DIR = Path(__file__).resolve().parent
 BUILD_DIR = CLIENT_DIR / "build"
 SOURCE_DIR = CLIENT_DIR.parent / "Human_Solution"
 
-SUPPORTED_SOLVERS = ("baseline", "improved")
+SUPPORTED_SOLVERS = ("baseline", "improved", "ai")
 
 _ASSIGNED_RE = re.compile(r"Request (\d+):\s+Assigned to Slot (\d+)")
 _UNASSIGNED_RE = re.compile(r"Request (\d+):\s+Not Assigned")
@@ -82,7 +82,10 @@ def build_all() -> None:
         )
 
 
-def run(solver: str, stdin_payload: str, num_requests: int, timeout_s: float = 60.0) -> SolverResult:
+DEFAULT_TIMEOUT_S = float(os.environ.get("SCHED_SOLVER_TIMEOUT_S", "10"))
+
+
+def run(solver: str, stdin_payload: str, num_requests: int, timeout_s: float = DEFAULT_TIMEOUT_S) -> SolverResult:
     """Run the selected backend against *stdin_payload* and parse its output."""
     bin_path = ensure_built(solver)
 
