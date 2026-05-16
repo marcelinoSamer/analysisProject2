@@ -3,8 +3,16 @@
 201 database
 WEEK 1
 1
-201:Mon10
+1 201 Mon10
 1
-101 python Mon10 medium 0
+1 101 python Mon10 medium 0
+0
 
-# No feasible slot
+0
+0
+
+###
+
+No feasible assignment due to topic matching constraints
+
+###

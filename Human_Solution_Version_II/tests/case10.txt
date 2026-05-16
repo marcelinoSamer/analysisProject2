@@ -7,15 +7,29 @@
 205 python
 WEEK 1
 5
-201:Mon10 202:Mon10 203:Mon10 204:Mon10 205:Mon10
+1 201 Mon10
+2 202 Mon10
+3 203 Mon10
+4 204 Mon10
+5 205 Mon10
 10
-101 python Mon10 low 0
-102 python Mon10 low 0
-103 python Mon10 medium 0
-104 python Mon10 high 0
-105 python Mon10 high 0
-106 python Mon10 low 0
-107 python Mon10 medium 0
-108 python Mon10 high 0
-109 python Mon10 high 0
-110 python Mon10 high 0
+1 101 python Mon10 low 0
+2 102 python Mon10 low 0
+3 103 python Mon10 medium 0
+4 104 python Mon10 high 0
+5 105 python Mon10 high 0
+6 106 python Mon10 low 0
+7 107 python Mon10 medium 0
+8 108 python Mon10 high 0
+9 109 python Mon10 high 0
+10 110 python Mon10 high 0
+0
+
+0
+0
+
+###
+
+All can be assigned. Choose the ones with high priority.
+
+###

@@ -4,9 +4,21 @@
 202 database
 WEEK 1
 2
-201:Mon10 202:Mon10
+1 201 Mon10
+2 202 Mon10
 2
-101 python Mon10 medium 0
-102 database Mon10 medium 0
+1 101 python Mon10 medium 0
+2 102 database Mon10 medium 0
+0
 
-# Easy case. Two slots, Two requests
+0
+0
+
+###
+
+Available slots for all requests
+No conflicts
+No cancellations or rescheduling
+Expected: All requests get sereved
+
+###

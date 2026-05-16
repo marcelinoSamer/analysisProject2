@@ -25,7 +25,7 @@ struct Request {
   int id;
   int fellow_id;
   vector<int> required_topics;
-  vector<int> acceptable_times;
+  vector<pair<int, int>> acceptable_times;
   Urgency urgency;
   int preferred_mentor;
   int submission_week;
@@ -42,7 +42,7 @@ struct Slot {
   int id;
   int mentor_id;
   vector<int> mentor_topics;
-  int time_block;
+  pair<int, int> time_block;
   
   // State tracking
   SlotState state = SlotState::AVAILABLE;

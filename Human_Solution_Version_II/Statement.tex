@@ -1,0 +1,325 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage[margin=1in]{geometry}
+\title{Analysis and Design of Algorithms\\Project II\\Problem Statement}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Real-World Narrative}
+
+A university mentorship program provides weekly one-on-one support sessions between fellows and mentors. Fellows use these sessions to ask for help with technical, academic, or project-related challenges.
+
+Each week, fellows may submit support requests describing what kind of help they need and when they are available. Mentors have limited availability and may only be able to help with certain topics. Because demand changes from week to week and not every request can be satisfied, the program must assign sessions in a way that is fair, explainable, and sensitive to both urgency and long‑term waiting time.
+
+The system works with changing information. Some mentor slots may be canceled or rescheduled, and some requests may be withdrawn.
+
+\section*{Notation}
+
+\begin{itemize}
+\item $F$: number of fellows enrolled.
+\item $M$: number of mentors.
+\item $S$: number of tentative mentor slots offered in a given week.
+\item $R$: number of requests submitted in a given week.
+\item $w$: current week number (starting from 1).
+\end{itemize}
+
+% \section*{Input Format (Exact Specification)}
+
+% All input is read from a single file. All IDs are integers. The file structure is:
+
+% \bigskip
+% \noindent\textbf{Line 1:} space‑separated fellow IDs ($F$ integers)
+
+% \noindent\textbf{Line 2:} space‑separated mentor IDs ($M$ integers)
+
+% \noindent\textbf{Next $M$ lines:} For each mentor in the same order as line 2, a line containing:
+% \[
+% \texttt{mentor\_id topic1 topic2 ... topicK}
+% \]
+% (Topics are strings without spaces. If a mentor has no topics, write only the mentor ID.)
+
+% \bigskip
+
+% \noindent\textbf{Then for each week (in order):}
+
+% \begin{itemize}
+% \item Line: \texttt{WEEK w}
+% \item Next line: $S$ (integer)
+% \item Next line: $S$ tokens, each = \texttt{mentor\_id:time\_block} (time block string, e.g., \texttt{Mon10})
+% \item Next line: $R$ (integer)
+% \item Next $R$ lines: each request line with fields separated by spaces:
+% \[
+% \texttt{fellow\_id required\_topics\_list acceptable\_times\_list urgency preferred\_mentor}
+% \]
+% where:
+% \begin{itemize}
+% \item \texttt{required\_topics\_list}: comma‑separated topics (no spaces). Use \texttt{""} for empty.
+% \item \texttt{acceptable\_times\_list}: comma‑separated time blocks.
+% \item \texttt{urgency}: one of \texttt{high}, \texttt{medium}, \texttt{low}.
+% \item \texttt{preferred\_mentor}: integer mentor ID, or \texttt{0} if none.
+% \end{itemize}
+% \end{itemize}
+
+% \noindent\textbf{Example:}
+% \begin{verbatim}
+% 101 102 103
+% 201 202
+% 201 database python
+% 202 networking
+
+% WEEK 1
+% 3
+% 201:Mon10 201:Tue14 202:Mon10
+% 4
+% 101 database,api Mon10 high 0
+% 102 python Mon10 medium 201
+% 103 networking Tue14 low 0
+% 101 database Mon10,Tue14 high 202
+
+% WEEK 2
+% 2
+% 201:Wed11 202:Wed11
+% 3
+% 102 python Wed11 medium 0
+% 103 database Wed11 high 0
+% 101 api Wed11 low 0
+% \end{verbatim}
+
+
+\section*{Input Format (Exact Specification)}
+
+All input is read from a single file. All IDs are integers. The file structure is:
+
+\bigskip
+\noindent\textbf{Line 1:} space-separated fellow IDs ($F$ integers)
+
+\noindent\textbf{Line 2:} space-separated mentor IDs ($M$ integers)
+
+\noindent\textbf{Next $M$ lines:} For each mentor in the same order as line 2, a line containing:
+\[
+\texttt{mentor\_id topic1 topic2 ... topicK}
+\]
+(Topics are strings without spaces. If a mentor has no topics, write only the mentor ID.)
+
+\bigskip
+
+\noindent\textbf{Then for each week (in order):}
+
+\begin{itemize}
+    \item \texttt{WEEK w}
+
+    \item \textbf{New slots:}
+    \begin{itemize}
+        \item Next line: $S$ (integer), the number of new slots introduced this week.
+        \item Next $S$ lines: each line has the form
+        \[
+        \texttt{slot\_id mentor\_id time\_block}
+        \]
+        where \texttt{slot\_id} is unique across the entire program.
+    \end{itemize}
+
+    \item \textbf{New requests:}
+    \begin{itemize}
+        \item Next line: $R$ (integer), the number of new requests introduced this week.
+        \item Next $R$ lines: each request line has fields separated by spaces:
+        \[
+        \texttt{request\_id fellow\_id required\_topics\_list}
+        \]
+        \[
+        \texttt{acceptable\_times\_list urgency preferred\_mentor}
+        \]
+        where:
+        \begin{itemize}
+            \item \texttt{required\_topics\_list}: comma-separated topics (no spaces). Use \texttt{""} for empty.
+            \item \texttt{acceptable\_times\_list}: comma-separated time blocks.
+            \item \texttt{urgency}: one of \texttt{high}, \texttt{medium}, \texttt{low}.
+            \item \texttt{preferred\_mentor}: integer mentor ID, or \texttt{0} if none.
+        \end{itemize}
+    \end{itemize}
+
+    \item \textbf{Slot cancellations:}
+    \begin{itemize}
+        \item Next line: $C$ (integer), the number of slots cancelled this week.
+        \item Next line: $C$ integers, each a \texttt{slot\_id:time\_block} to be canceled at this time slot.
+    \end{itemize}
+
+    \item \textbf{Slot rescheduling:}
+    \begin{itemize}
+        \item Next line: $U$ (integer), the number of slots rescheduled this week.
+        \item Next $U$ lines: each line has the form
+        \[
+        \texttt{slot\_id time\_block new\_time\_block}
+        \]
+        The slot keeps the same mentor and slot ID; only the time block changes.
+    \end{itemize}
+
+    \item \textbf{Request cancellations:}
+    \begin{itemize}
+        \item Next line: $Q$ (integer), the number of requests cancelled this week.
+        \item Next line: $Q$ integers, each a \texttt{request\_id:time\_block} to be removed before matching.
+    \end{itemize}
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Notes:}
+\begin{itemize}
+    \item A cancelled slot is no longer available for assignment in that week.
+    \item A rescheduled slot replaces its previous time block for that week.
+    \item A cancelled request is ignored in that week and should not be matched.
+    \item If a slot is both rescheduled and cancelled in the same week, the input should not contain such a conflict.
+    \item If a request is cancelled in the same week it was introduced, it is treated as withdrawn before matching.
+\end{itemize}
+
+
+\section*{System State (Pending Requests and Waiting Measure)}
+
+The system maintains, for each fellow, the set of \textbf{pending requests} – requests that have been submitted (in current or previous weeks) but not yet served (assigned to a slot). When a request is served, it is removed from pending.
+
+\noindent For each request $r$, we know its submission week, denote it by $r.\text{week}$ (derived from the input implicitly). For the current week $w$, the \textbf{age} of request $r$ is $w - r.\text{week}$.
+
+\noindent Define the \textbf{total backlog waiting time} for fellow $f$ in week $w$ as:
+
+\[
+W_f(w) = \sum_{r \in \text{pending}(f)} (w - r.\text{week})
+\]
+
+\noindent If a fellow has no pending requests, $W_f(w) = 0$ (empty sum). This measure is used only for end‑of‑program evaluation, not for weekly decisions.
+
+\section*{Simulated Uncertainties}
+
+After reading a week's data, and during assignment, your program must simulate real‑world unpredictability:
+
+\begin{itemize}
+\item Each slot may be canceled or rescheduled with a certain probability. Canceled slots are removed from the available set.
+\item Each request may be canceled and thus removed from the pending set forever.
+\end{itemize}
+
+\noindent These probabilities are not part of the input; you define them in your code. The goal is to test your algorithm's robustness.
+
+\section*{Output Definition}
+
+At the end of each week, the system produces:
+
+\begin{enumerate}
+\item A set of assignments $\texttt{request\_id} \to \texttt{slot\_id}$ where each request is identified by its \textbf{index} within the week (1‑based order in the input) combined with the week number. Each slot is assigned to at most one request, and each request is assigned to at most one slot.  
+The assignment must satisfy:
+\begin{itemize}
+\item The slot's time block is in the request's acceptable times list.
+\item The mentor's topic set intersects the request's required topics (at least one topic in common).
+\end{itemize}
+\item For every request that remains unserved after assignment, a reason label chosen from:
+\begin{itemize}
+\item \textbf{no feasible slot}: no slot matched availability and topic needs.
+\item \textbf{lower priority}: a compatible slot existed but was given to higher‑priority requests.
+\item \textbf{request canceled}: the request was randomly canceled before assignment.
+\end{itemize}
+\end{enumerate}
+
+\section*{Compatibility and Scoring}
+
+A request may be assigned to a slot only if:
+\begin{itemize}
+\item The slot's time block is in the request's acceptable times list.
+\item The mentor's topic set has non‑empty intersection with the request's required topics.
+\item The slot is not canceled.
+\end{itemize}
+
+\noindent The \textbf{topic match score} for a (request, slot) pair is:
+\[
+\text{topicMatch}(r, s) = |\text{required\_topics}(r) \cap \text{mentor\_topics}(s)|
+\]
+A score of 0 makes the pair infeasible.
+
+\section*{Objective Function (Lexicographic)}
+
+Each week, the algorithm must:
+
+\begin{enumerate}
+\item \textbf{Primary goal:} Maximize the number of \textbf{requests} that are served (assigned to a slot) this week.
+\item \textbf{Secondary goal:} Among all assignments that serve the maximum possible number of requests, maximize the total \textbf{benefit} of the served requests:
+\[
+\text{Benefit}_{\text{week}} = \sum_{r \in \text{Served}} \Big( \alpha \cdot u(\text{urgency}_r) + \beta \cdot \text{topicMatch}(r, \text{slot}_r) + \gamma \cdot p_r + \delta \cdot \text{age}_r \Big)
+\]
+where:
+\begin{itemize}
+\item $\text{Served}$ is the set of requests assigned this week.
+\item $u(\text{urgency}_r)$: high = 3, medium = 2, low = 1.
+\item $\text{topicMatch}(r, \text{slot}_r)$ is defined above.
+\item $p_r = 1$ if the slot’s mentor equals the request’s \textit{preferred mentor} (and that mentor is specified and $>0$), else 0.
+\item $\text{age}_r = w - r.\text{week}$ (current week minus submission week).
+\item $\alpha, \beta, \gamma, \delta$ are positive weights (e.g., $\alpha=5, \beta=2, \gamma=1, \delta=2$).
+\end{itemize}
+\end{enumerate}
+
+\subsection*{End‑of‑Program Evaluation}
+
+After all weeks have been processed, report:
+
+\begin{itemize}
+\item \textbf{Total number of served requests} across all weeks.
+\item \textbf{Total benefit of all served requests} (sum of benefits computed at the time each request was served).
+\item \textbf{Penalty for unserved requests} (optional):
+\[
+\text{Penalty}_{\text{total}} = \sum_{\text{requests } r \text{ that never got served}} \lambda \cdot g(\text{finalAge}_r)
+\]
+where $\text{finalAge}_r = (T+1) - r.\text{week}$ (the program ends at week $T$), $g$ is an increasing function (e.g., $g(x)=x^2$), and $\lambda$ is a penalty factor (e.g., $\lambda=1$).
+\end{itemize}
+
+\section*{Assumptions}
+
+\begin{itemize}
+\item A fellow may submit multiple requests in a week. There is no per‑fellow limit on assignments per week; a fellow could be assigned to multiple slots in the same week if their available time blocks and the slots' timings allow it.
+\item Slots are one‑on‑one (capacity 1).
+\item All input data is known at the start of the week (batch processing). Random cancellations are applied by your program during assignment.
+\item Topic compatibility requires at least one topic in common (score $\ge 1$).
+\item A request's acceptable times list is fixed at submission and does not change in subsequent weeks. If a fellow's availability changes, they must submit a new request (and may cancel the old one).
+\item The system aims to reduce request waiting times over time, as reflected in the benefit score and the final penalty.
+\end{itemize}
+
+\section*{Sample Cases}
+
+\subsection*{Case 1: No Backlog}
+All requests are new (age = 0). Enough slots exist, all constraints satisfied.  
+\textbf{Expected:} All requests served. Primary goal achieved.
+
+\subsection*{Case 2: Age vs Urgency}
+One slot remains. Two requests compete:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+& Request A & Request B \\
+\midrule
+Urgency & medium (2) & high (3) \\
+Age ($w - r.\text{week}$) & 5 & 0 \\
+Topic match & 2 & 2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+With $\alpha=5, \delta=2$:
+- Benefit A = $5\cdot2 + 2\cdot5 = 10 + 10 = 20$
+- Benefit B = $5\cdot3 + 2\cdot0 = 15$
+
+Request A is served. This shows that a sufficiently old request can outweigh higher urgency.
+
+\subsection*{Case 3: Multiple Requests from Same Fellow}
+Fellow C has two pending requests: Request C1 (week 7, age 3) and Request C2 (week 9, age 1). Fellow D has one pending request (week 8, age 2). Enough slots for two requests. The algorithm may serve both C1 and C2 if slots allow, because there is no per‑fellow weekly limit. The benefit of serving C1 (age 3) and C2 (age 1) is compared to serving D (age 2) and possibly another request. This tests the request‑centric nature.
+
+\section*{Successful Solution Criteria}
+
+An algorithm's output is considered correct if:
+
+\begin{enumerate}
+\item All hard constraints are satisfied (time compatibility, topic overlap $\ge 1$, no double assignment of a slot).
+\item After applying random cancellations, the assignment is feasible.
+\item Unserved requests are assigned a valid reason label.
+\item On small instances (e.g., $\le 10$ requests, $\le 5$ slots per week) where exhaustive search is possible, the algorithm achieves the maximum number of served requests.
+\item Over multiple random seeds (for cancellations), the algorithm runs without errors and produces reasonable assignments.
+\end{enumerate}
+
+\end{document}

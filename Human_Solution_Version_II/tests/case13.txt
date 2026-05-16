@@ -1,23 +1,48 @@
-101 102 103 104
-201 202 203
-201 python database
-202 python api
-203 database
+102 101
+201
+201 python
 WEEK 1
+1
+1 201 Mon10
 2
-201:Mon10 203:Tue14
-3
-101 python Mon10 high 0
-102 database Tue14 medium 0
-103 api Wed10 low 202
+1 102 python Mon10 medium 0
+2 101 python Mon10 medium 0
+0
+1
+1 Mon2 Mon12
+0
+
 WEEK 2
-1
-202:Wed10
+0
+0
+0
+
 2
-104 python Mon10 high 0
-101 database Mon10 medium 0
+1 Mon2 Mon10
+1 Mon3 Mon12
+0
+
 WEEK 3
+0
+0
+0
+
+0
 1
-201:Mon10
+101:Mon2
+
+WEEK 4
+0
+0
+0
+
 1
-102 python Mon10 high 201
+1 Mon1 Mon10
+0
+
+###
+
+Assignment => Rescheduling => Cancell assignment
+=> Reschedule again => Reassign => Cancel request
+
+###
