@@ -1,0 +1,221 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{\textbf{Industry Measures versus Rigorous Mathematical Evaluation}\\
+\large Weekly Mentor--Fellow Scheduling System}
+\author{Marcelino}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report discusses the difference between practical industry measures and rigorous mathematical measures in the context of a weekly mentor--fellow scheduling system. The project compares multiple scheduling backends, including exhaustive baseline search, an improved heuristic-oriented backend, and an AI-generated scarcity-aware greedy backend. The main point is that industry evaluation often emphasizes usability, speed, maintainability, and operational reliability, while mathematical evaluation emphasizes formal feasibility, optimality, guarantees, and provable bounds.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Project Context}
+
+The system schedules weekly one-on-one mentorship sessions between fellows and mentors. Each fellow request includes:
+
+\begin{itemize}[noitemsep]
+    \item a fellow identifier,
+    \item a requested topic,
+    \item an urgency level,
+    \item a set of available slot identifiers,
+    \item a week or timestamp value.
+\end{itemize}
+
+Each mentor has a set of specialty topics, and each slot belongs to exactly one mentor. A valid assignment must satisfy topic compatibility, fellow availability, slot capacity, and the one-slot-per-fellow rule.
+
+\section{Mathematical View of the Problem}
+
+\subsection{Formal Inputs}
+
+Let:
+
+\begin{itemize}[noitemsep]
+    \item $F$ be the set of fellows,
+    \item $M$ be the set of mentors,
+    \item $S$ be the set of available slots,
+    \item $R$ be the set of weekly requests.
+\end{itemize}
+
+Each request $r \in R$ has a topic, urgency weight, available slot set, and time value. Each mentor $m \in M$ has a set of specialties.
+
+\subsection{Feasibility Constraints}
+
+An assignment is feasible only if:
+
+\begin{align}
+    \sum_{s \in S} x_{r,s} &\leq 1 && \forall r \in R, \\
+    \sum_{r \in R} x_{r,s} &\leq 1 && \forall s \in S, \\
+    x_{r,s} &= 0 && \text{if } s \notin A_r, \\
+    x_{r,s} &= 0 && \text{if mentor}(s) \text{ does not cover topic}(r).
+\end{align}
+
+\subsection{Objective Function}
+
+The mathematical objective can be expressed as a minimization problem over unserved or delayed requests. One common form is:
+
+\begin{equation}
+    \text{Penalty}_{week}
+    =
+    \sum_{f \in U}
+    w(\text{urgency}_f)(s_f + 1)^2,
+\end{equation}
+
+where $U$ is the set of unserved fellows, $w$ is the urgency weight, and $s_f$ is the starvation counter.
+
+\subsection{Rigorous Mathematical Questions}
+
+A mathematical analysis asks questions such as:
+
+\begin{itemize}[noitemsep]
+    \item Is the produced schedule feasible?
+    \item Is the objective function minimized?
+    \item Is the approximation ratio bounded?
+    \item Does the algorithm always terminate?
+    \item What is the worst-case time complexity?
+    \item Can a counterexample show that a heuristic is not optimal?
+\end{itemize}
+
+\section{Industry View of the Problem}
+
+\subsection{Practical Success Measures}
+
+Industry evaluation usually asks whether the system is useful, reliable, and fast enough for real users. Common measures include:
+
+\begin{itemize}[noitemsep]
+    \item response time,
+    \item throughput,
+    \item percentage of requests assigned,
+    \item user-facing clarity,
+    \item operational stability,
+    \item ease of debugging,
+    \item maintainability,
+    \item deployment simplicity.
+\end{itemize}
+
+\subsection{Frontend and Product Measures}
+
+For this project, the Python client introduces practical measures that are not purely mathematical:
+
+\begin{itemize}[noitemsep]
+    \item ability to switch algorithms during runtime,
+    \item ability to reset to a known mid-lifecycle state,
+    \item ability to load canned edge-case CSVs,
+    \item live sanity checks for impossible requests,
+    \item readable weekly schedule views,
+    \item simple operational workflow for a user.
+\end{itemize}
+
+\subsection{Performance Measures}
+
+The implemented frontend records runtime metrics such as:
+
+\begin{itemize}[noitemsep]
+    \item backend selected,
+    \item elapsed wall-clock time,
+    \item number of requests submitted,
+    \item number of requests assigned,
+    \item weekly penalty,
+    \item timeout or fallback behavior.
+\end{itemize}
+
+\section{Comparison of Measurement Styles}
+
+\begin{table}[h]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{p{0.28\linewidth} p{0.31\linewidth} p{0.31\linewidth}}
+\toprule
+\textbf{Aspect} & \textbf{Rigorous Mathematics} & \textbf{Industry Practice} \\
+\midrule
+Correctness & Formal feasibility and proof obligations & No visible failures and valid user-facing output \\
+Optimality & Exact minimum or bounded approximation & Good enough assignment quality under time limits \\
+Performance & Asymptotic complexity and worst-case bounds & Measured latency on real or representative cases \\
+Failure Handling & Classified infeasibility and counterexamples & Clear warnings, timeouts, fallback behavior \\
+Evaluation Data & Constructed proofs and adversarial cases & Regression cases, CSV scenarios, user workflows \\
+System State & Mathematical variables such as $s_f$ & Reset buttons, snapshots, session state, diagnostics \\
+\bottomrule
+\end{tabular}
+\caption{Difference between mathematical and industry-oriented evaluation.}
+\end{table}
+
+\section{Algorithm Backends in This Project}
+
+\subsection{Baseline Backend}
+
+The baseline backend represents the mathematically strict reference style. It searches exhaustively on smaller inputs and is useful for validating correctness and comparing heuristic behavior.
+
+\subsection{Improved Backend}
+
+The improved backend balances rigor and practicality. It preserves the same input contract but introduces preprocessing, timeout handling, and a fallback heuristic.
+
+\subsection{AI Backend}
+
+The AI backend represents a scarcity-aware greedy approach. It is useful for practical comparison because it often runs quickly and exposes a different scheduling philosophy.
+
+\section{Why Industry Measures Differ from Mathematical Measures}
+
+\subsection{Time Limits Matter}
+
+In mathematics, an exponential algorithm can still be valid if it is correct. In industry, an algorithm that takes too long is usually considered unusable even if it is exact.
+
+\subsection{Users Need Explanations}
+
+Formal feasibility is not enough for a real interface. A user needs to know why a request cannot be scheduled, whether a topic is unknown, and whether a listed slot is incompatible.
+
+\subsection{Systems Need Recovery Paths}
+
+Industry systems need reset buttons, snapshots, fallback algorithms, and diagnostics. These are not part of the pure optimization model, but they are essential for testing and operation.
+
+\subsection{Metrics Are Often Empirical}
+
+Mathematical analysis focuses on proofs. Industry analysis often relies on measured runtime, observed behavior, logs, dashboards, and repeated test scenarios.
+
+\section{Test Cases as a Bridge Between Both Views}
+
+The generated CSV cases help connect mathematical reasoning with practical testing:
+
+\begin{itemize}[noitemsep]
+    \item \texttt{all\_same\_slot.csv}: capacity bottleneck,
+    \item \texttt{impossible\_topic.csv}: infeasible topic and incompatible slots,
+    \item \texttt{no\_overlap.csv}: trivial perfect matching,
+    \item \texttt{topic\_bottleneck.csv}: low topic coverage,
+    \item \texttt{starvation\_rescue.csv}: starvation versus urgency,
+    \item \texttt{large\_mixed.csv}: practical timeout and performance comparison.
+\end{itemize}
+
+\section{Discussion}
+
+The rigorous mathematical view gives the project a precise definition of correctness. It defines what a legal assignment is, how penalty is computed, and what it means for an algorithm to be optimal or near-optimal.
+
+The industry view gives the project a usable system. It asks whether users can submit requests, understand failures, compare algorithms, reload known states, and observe runtime behavior.
+
+Both views are necessary. Mathematical rigor prevents invalid schedules and vague objectives. Industry measures ensure the system can actually be used, tested, and demonstrated under realistic constraints.
+
+\section{Conclusion}
+
+This project shows that mathematical correctness and industry usefulness are related but not identical. A rigorous algorithm can be too slow for practical use, while a practical heuristic can be fast and user-friendly without offering full optimality guarantees. The best engineering result is usually a system that keeps the mathematical model explicit while exposing practical controls, diagnostics, and performance measurements.
+
+\end{document}
