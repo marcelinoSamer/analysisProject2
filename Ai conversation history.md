@@ -1,5 +1,5 @@
 # Front end development plan for project
-_Exported on 5/17/2026 at 00:44:07 GMT+3 from Cursor (3.2.16)_
+_Exported on 5/17/2026 at 01:47:54 GMT+3 from Cursor (3.2.16)_
 
 ---
 
@@ -361,4 +361,89 @@ Created the LaTeX report here:
 `industry_vs_mathematics_report.tex`
 
 It includes a clean structure with title, abstract, sections, equations, a comparison table, and light placeholder-level discussion. I kept it concise and avoided heavy comments so you can add your own details later.
+
+---
+
+**User**
+
+Edit the app to act as the following:
+Whenever run solver is pressed the 3 algorithms work, the ai, the improved, and the baseline, and the performance tab shows the 3 against each other with graphs and statistics. i also want -- if easily implemented -- a forth algorithm that is just greedy or maybe even brute force. the idea here is to prove that a bad algorithm works just fine depending on the context and the business model.
+
+Add these to the readme.
+
+---
+
+**Cursor**
+
+I’ll change the solve flow so one button press benchmarks every backend on the same pending-request snapshot, then commits only the currently selected solver’s schedule. I’ll add a simple intentionally “bad” greedy backend in Python if it fits cleanly, and update the performance tab to show grouped bars/statistics.
+
+I found the current solve path still runs exactly one backend and then drains the request queue. I’m going to split “benchmark all algorithms” from “commit a schedule”: every backend will run on the same untouched input, the performance data will be recorded, and only the selected backend’s result will advance the week if it succeeds.
+
+The fourth backend is now a naive “first feasible slot” greedy implemented in Python. Next I’m smoke-testing the new benchmark flow: one request batch should run Baseline, Improved, AI, and Greedy, then commit only the selected solver if it succeeds.
+
+The benchmark behavior is passing: on easy cases all four succeed and the selected solver commits; on `large_mixed.csv` with Baseline selected, Baseline times out, the other three still benchmark, and the pending queue stays intact because the selected solver failed. I’m updating the README to document that behavior now.
+
+Implemented.
+
+What changed:
+- `Run solver` now benchmarks **all four algorithms** on the same pending request set:
+  - `baseline`
+  - `improved`
+  - `ai`
+  - new `greedy` Python backend
+- The selected solver in the header now controls only which successful result gets **committed** to the weekly schedule.
+- If the selected solver fails or times out, no schedule is committed and the pending queue stays intact, but the benchmark still appears in the Performance tab.
+- Added the intentionally weak `greedy` algorithm in `client/solver.py`: request-order, first-feasible-slot assignment.
+- Performance tab now shows:
+  - summary statistic cards,
+  - runtime bar chart,
+  - per-algorithm rows with elapsed time, assigned count, penalty, fallback/failure/committed status.
+- README updated to explain the new benchmark behavior and the business-model point: bad/simple algorithms can look fine in easy contexts like `no_overlap.csv`.
+
+Verified with smoke tests:
+- `no_overlap.csv` selected `greedy` → all 4 benchmarked, `greedy` committed, pending queue drained.
+- `large_mixed.csv` selected `baseline` → all 4 benchmarked, `baseline` timed out, no schedule committed, pending queue preserved.
+- Linter check passed for edited files.
+
+---
+
+**User**
+
+make one more built in test case with huge dataset. this is to test how the better algorithm perform better only on huge test cases 
+
+---
+
+**Cursor**
+
+I’ll add a generated “huge” CSV under `client/tests/` and update the README’s built-in test-case table so it appears in the app’s existing test-case picker automatically.
+
+I’m generating it programmatically to avoid hand-writing hundreds of repetitive CSV rows. The case will have many mentors, many slots, and many competing requests so the exhaustive baseline should time out while the improved/AI/greedy paths still return benchmark data.
+
+Now I’ll smoke-test the new case through the Flask test client, using the all-algorithm benchmark endpoint, and then update the README entry.
+
+The huge case behaves as intended with the app’s default 10s solver timeout: Baseline times out, Improved commits using its fallback, AI returns quickly with more assignments, and naive Greedy returns fastest with fewer assignments. I’ll add it to the README table.
+
+Added a new built-in huge dataset:
+
+`client/tests/huge_stress.csv`
+
+It has:
+- 12 mentors
+- 72 slots
+- 96 requests
+- heavy overlap/bottlenecks on common topics
+- enough mixed/easy rows to show why a bad/simple algorithm can still seem acceptable in some contexts
+
+I also updated `client/README.md` to include it in the built-in test-case table.
+
+Smoke test result with the app’s default timeout:
+
+```text
+baseline  -> timeout
+improved  -> commits, fallback used, 58/96 assigned
+ai        -> fast, 64/96 assigned
+greedy    -> fastest, 52/96 assigned
+```
+
+This should demonstrate exactly the point you wanted: the better algorithms become clearly valuable on huge workloads, while naive greedy can still look fine or even attractive in easier/business-friendly cases.
 

@@ -1,8 +1,8 @@
 """Flask front end for the weekly mentor-slot scheduler.
 
 All persistent state lives in a single :class:`store.HotStore` instance kept in
-process memory ("hot storage"). The scheduler itself is the existing
-``Human_Solution`` C++ backend — see :mod:`solver`.
+process memory ("hot storage"). Solver execution is delegated to :mod:`solver`,
+which benchmarks the C++ backends plus one simple Python greedy baseline.
 
 Run with::
 
@@ -216,21 +216,58 @@ def solve():
     if not requests_snapshot:
         return _json_error("No pending requests to schedule for the current week.")
 
-    try:
-        result = solver.run(chosen, payload_text, num_requests=len(requests_snapshot))
-    except solver.SolverError as exc:
-        return _json_error(str(exc), status=500)
+    comparison_results = []
+    chosen_result = None
+    for candidate in SUPPORTED_SOLVERS:
+        try:
+            result = solver.run(
+                candidate, payload_text, num_requests=len(requests_snapshot)
+            )
+            metrics = store.evaluate_assignments(
+                result.assignments,
+                elapsed_ms=result.elapsed_ms,
+                fallback_used=result.timed_out_fallback,
+            )
+            metrics["solver"] = candidate
+            metrics["stdout"] = result.raw_output
+            comparison_results.append(metrics)
+            if candidate == chosen:
+                chosen_result = result
+        except solver.SolverError as exc:
+            metrics = store.evaluate_assignments(
+                [-1] * len(requests_snapshot),
+                error=str(exc),
+            )
+            metrics["solver"] = candidate
+            metrics["stdout"] = ""
+            comparison_results.append(metrics)
 
-    run_record = store.commit_assignments(
-        result.assignments, solver=chosen, elapsed_ms=result.elapsed_ms
+    run_record = None
+    committed_solver = None
+    if chosen_result is not None:
+        run_record = store.commit_assignments(
+            chosen_result.assignments,
+            solver=chosen,
+            elapsed_ms=chosen_result.elapsed_ms,
+        )
+        committed_solver = chosen
+
+    benchmark = store.record_benchmark(
+        week=store.current_week - 1 if run_record else store.current_week,
+        selected_solver=chosen,
+        results=comparison_results,
+        committed_solver=committed_solver,
     )
 
     return jsonify(
         {
             "ok": True,
-            "run": run_record.to_dict(),
-            "fallback_used": result.timed_out_fallback,
-            "stdout": result.raw_output,
+            "run": run_record.to_dict() if run_record else None,
+            "comparison_results": comparison_results,
+            "benchmark": benchmark,
+            "commit_error": None
+            if run_record
+            else f"Selected solver '{chosen}' failed; no schedule was committed.",
             "stdin": payload_text,
             "state": store.snapshot(),
         }
@@ -320,10 +357,18 @@ def load_test_case():
 def healthz():
     info: Dict[str, Any] = {"ok": True, "solvers": {}}
     for name in solver.SUPPORTED_SOLVERS:
+        if name == "greedy":
+            info["solvers"][name] = {
+                "binary": None,
+                "exists": True,
+                "kind": "python_builtin",
+            }
+            continue
         path = solver.binary_path(name)
         info["solvers"][name] = {
             "binary": str(path),
             "exists": path.exists(),
+            "kind": "subprocess",
         }
     return jsonify(info)
 
@@ -333,6 +378,8 @@ if __name__ == "__main__":
 
     # Pre-build the binaries on first launch so the user does not have to do it.
     for name in SUPPORTED_SOLVERS:
+        if name == "greedy":
+            continue
         try:
             solver.ensure_built(name)
         except solver.SolverError as exc:

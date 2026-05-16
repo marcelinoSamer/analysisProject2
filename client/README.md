@@ -6,8 +6,7 @@ application talks to the existing C++ backends in `Human_Solution/` —
 this client does **not** re-implement the scheduling logic in Python.
 
 * **Frontend:** Flask + a small vanilla-JS UI (no build step, no framework).
-* **Backend:** three scheduling algorithms, all driven over stdin/stdout
-  from Python:
+* **Backend:** four scheduling algorithms are benchmarked on every solve:
   - `baseline.cpp` — exhaustive backtracking (`Human_Solution/baseline.cpp`).
   - `improved.cpp` — preprocessed backtracking + greedy fallback
     (`Human_Solution/improved.cpp`).
@@ -15,6 +14,10 @@ this client does **not** re-implement the scheduling logic in Python.
     exposed via a tiny adapter (`client/cpp/ai_adapter.cpp`) that pulls
     the original file in unchanged and translates the same stdin format
     the other two backends use.
+  - **Greedy** — a deliberately naive Python algorithm that processes
+    requests in input order and takes the first feasible free slot. It is
+    intentionally weak so the UI can demonstrate that a bad algorithm may
+    look perfectly acceptable on easy business contexts.
 * **Storage:** in-memory ("hot storage") only — no database, no disk
   persistence. Everything lives inside a `HotStore` instance for the
   lifetime of the process.
@@ -25,7 +28,7 @@ From the repo root:
 
 ```bash
 python3 -m pip install -r client/requirements.txt
-client/build_cpp.sh               # compiles baseline + improved (macOS / Linux)
+client/build_cpp.sh               # compiles baseline + improved + AI adapter
 python3 client/app.py
 ```
 
@@ -38,8 +41,9 @@ are missing, so the explicit `build_cpp.sh` step is optional.
 
 ### Submit Request tab
 Register fellows, queue weekly requests (`fellow_id`, topic, urgency,
-list of acceptable slot IDs, week). Hit **Run solver** to dispatch the
-queue to the currently selected C++ backend.
+list of acceptable slot IDs, week). Hit **Run solver** to benchmark all
+algorithms on the same queue. The selected algorithm in the header is the
+only one whose schedule is committed.
 
 ### Mentors & Slots tab
 Add or remove mentors (with their specialties) and weekly slots. Slot
@@ -53,10 +57,16 @@ to it. The starvation table tracks `s_f` (consecutive weeks unserved)
 per fellow as described in the problem spec.
 
 ### Performance tab
-Every solver run is logged with elapsed wall-clock time, assignment count
-and total weighted-delay penalty. Flip the solver in the header and
-re-run the same week to compare baseline vs. improved on a like-for-like
-input.
+Every **Run solver** click benchmarks all four algorithms against the
+same pending requests: `baseline`, `improved`, `ai`, and `greedy`. The
+tab shows summary statistics, a runtime bar chart, and a detailed table
+with elapsed wall-clock time, assignment count, penalty, fallback status,
+and whether the solver was committed to the weekly schedule.
+
+This tab is intentionally product-oriented: it helps demonstrate that
+algorithm quality is contextual. The naive `greedy` algorithm can look
+excellent on `no_overlap.csv`, because the business context is easy; the
+same style of algorithm may perform poorly or unfairly on bottlenecks.
 
 ### CSV / Flush tab
 * **Built-in test cases** — one-click load any CSV under `client/tests/`.
@@ -73,13 +83,16 @@ input.
 
 ## Solver switch
 
-The pill in the header (`Baseline` / `Improved` / `AI`) is wired to a
-real runtime switch — every solve invokes whichever binary is currently
-selected, and a fresh selection takes effect on the very next solve.
-This makes it easy to demo the performance and quality gap mid-session:
-load `large_mixed.csv`, run once with `improved` (~5 s, falls back to
-greedy), flip to `ai` (single-digit ms, often higher-quality), then to
-`baseline` (will time out — that's the whole point of the comparison).
+The pill in the header (`Baseline` / `Improved` / `AI` / `Greedy`) no
+longer controls which algorithm is benchmarked — all algorithms are
+benchmarked every time. It controls which successful result is committed
+to the weekly schedule.
+
+If the selected solver fails or times out, no schedule is committed and
+the pending request queue is preserved. The Performance tab still records
+the full benchmark, so you can see which other algorithms succeeded. This
+is useful for `large_mixed.csv`: `baseline` times out, while `improved`,
+`ai`, and `greedy` still return comparison data.
 
 The AI backend has one important caveat: its internal
 `ScarcityAwareGreedySolver` starts each process invocation with `s_f = 0`
@@ -119,7 +132,7 @@ known-bad rows before running the solver.
 client/
 ├── app.py                # Flask routes
 ├── store.py              # HotStore: in-memory state + CSV loader + validation
-├── solver.py             # subprocess wrapper for the C++ binaries
+├── solver.py             # subprocess wrapper + naive Python greedy backend
 ├── build_cpp.sh          # compiles baseline + improved + AI adapter into ./build
 ├── cpp/
 │   ├── bits/stdc++.h     # tiny header shim so clang++ can build the GCC sources
@@ -138,6 +151,11 @@ re-included into a thin adapter that adds a stdin I/O front (AI
 backend), then driven by `subprocess.run` with the same stdin format
 documented in `Human_Solution/requirements.md`.
 
+The naive `greedy` backend is Python-only and does not have a binary. It
+uses the same generated solver input, parses it in Python, and assigns
+each request to the first free feasible slot. It is meant as a weak
+business baseline rather than as a mathematically strong algorithm.
+
 ## Built-in test cases
 
 The `client/tests/` directory ships ready-to-load edge-case scenarios.
@@ -148,10 +166,11 @@ tab and is loadable with one click.
 |-----------------------------|------------------------------------------------------------------------------------|
 | `all_same_slot.csv`         | 5 fellows, 1 slot — verifies tie-breaking and that ≤1 ends up assigned.            |
 | `impossible_topic.csv`      | Mix of feasible + impossible requests; checks per-request infeasibility reporting. |
-| `no_overlap.csv`            | One unique slot per request — every solver must find the trivial perfect matching. |
+| `no_overlap.csv`            | One unique slot per request — even the naive Greedy solver looks excellent.        |
 | `topic_bottleneck.csv`      | 6 requests for a single low-coverage topic — verifies urgency-based selection.     |
 | `starvation_rescue.csv`     | Spec's Case 3 — starved exploratory fellow vs. fresh blocker.                       |
-| `large_mixed.csv`           | 10 mentors / 30 slots / 25 requests — shows the **performance gap** between solvers (baseline times out, improved falls back to greedy, AI returns in single-digit ms). |
+| `large_mixed.csv`           | 10 mentors / 30 slots / 25 requests — shows the **performance gap** between solvers (baseline times out, improved falls back, AI/Greedy return quickly). |
+| `huge_stress.csv`           | 12 mentors / 72 slots / 96 requests — designed to show that better algorithms only become visibly better on large workloads. Baseline times out, Improved falls back and commits, AI assigns more, and naive Greedy stays fastest but lower-quality. |
 
 ## CSV format (mid-lifecycle import)
 

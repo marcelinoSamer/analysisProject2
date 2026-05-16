@@ -188,22 +188,67 @@ function render() {
     });
   }
 
-  // Solver runs
+  // Benchmark runs
+  const benchmarkRuns = STATE.benchmark_runs || [];
+  const latestBenchmark = benchmarkRuns.length ? benchmarkRuns[benchmarkRuns.length - 1] : null;
+  const summary = $("#benchmark-summary");
+  const chart = $("#benchmark-chart");
+  if (summary) {
+    if (!latestBenchmark) {
+      summary.innerHTML = `<p class="empty">No benchmark data yet.</p>`;
+    } else {
+      const okResults = latestBenchmark.results.filter((r) => !r.error);
+      const fastest = okResults.slice().sort((a, b) => a.elapsed_ms - b.elapsed_ms)[0];
+      const mostAssigned = okResults.slice().sort((a, b) => b.num_assigned - a.num_assigned || a.elapsed_ms - b.elapsed_ms)[0];
+      const bestPenalty = okResults.slice().sort((a, b) => a.penalty - b.penalty || a.elapsed_ms - b.elapsed_ms)[0];
+      summary.innerHTML = `
+        <div class="stat-card"><div class="label">Latest week</div><div class="value">${latestBenchmark.week}</div></div>
+        <div class="stat-card"><div class="label">Committed schedule</div><div class="value">${latestBenchmark.committed_solver || "none"}</div></div>
+        <div class="stat-card"><div class="label">Fastest</div><div class="value">${fastest ? fastest.solver : "—"}</div></div>
+        <div class="stat-card"><div class="label">Most assigned</div><div class="value">${mostAssigned ? `${mostAssigned.solver} (${mostAssigned.num_assigned})` : "—"}</div></div>
+        <div class="stat-card"><div class="label">Lowest penalty</div><div class="value">${bestPenalty ? `${bestPenalty.solver} (${bestPenalty.penalty})` : "—"}</div></div>`;
+    }
+  }
+  if (chart) {
+    if (!latestBenchmark) {
+      chart.innerHTML = "";
+    } else {
+      const maxElapsed = Math.max(1, ...latestBenchmark.results.map((r) => r.error ? 0 : r.elapsed_ms));
+      chart.innerHTML = latestBenchmark.results.map((r) => {
+        const width = r.error ? 2 : Math.max(2, (r.elapsed_ms / maxElapsed) * 100);
+        const value = r.error ? "timeout/error" : `${r.elapsed_ms.toFixed(2)} ms`;
+        return `
+          <div class="bar-row">
+            <span class="chip chip-${r.solver}">${r.solver}</span>
+            <div class="bar-track"><div class="bar-fill ${r.solver}" style="width:${width}%"></div></div>
+            <span>${value}</span>
+          </div>`;
+      }).join("");
+    }
+  }
+
   const runsBody = $("#table-runs tbody");
   runsBody.innerHTML = "";
-  if (!STATE.solver_runs.length) {
-    runsBody.innerHTML = `<tr><td colspan="6" class="empty">No solver runs yet.</td></tr>`;
+  const rows = benchmarkRuns.slice().reverse().flatMap((batch) =>
+    batch.results.map((r) => ({ ...r, week: batch.week, committed_solver: batch.committed_solver }))
+  );
+  if (!rows.length) {
+    runsBody.innerHTML = `<tr><td colspan="7" class="empty">No benchmark runs yet.</td></tr>`;
   } else {
-    STATE.solver_runs.slice().reverse().forEach((r) => {
+    rows.forEach((r) => {
       const tr = document.createElement("tr");
-      const elapsed = r.elapsed_ms.toFixed(2);
+      const elapsed = r.error ? "—" : r.elapsed_ms.toFixed(2);
+      const status = r.error
+        ? `<span class="chip chip-warn" title="${String(r.error).replace(/"/g, '&quot;')}">failed</span>`
+        : `${r.fallback_used ? `<span class="chip chip-warn">fallback</span> ` : ""}${r.solver === r.committed_solver ? `<span class="chip chip-ok">committed</span>` : `<span class="chip">benchmarked</span>`}`;
       tr.innerHTML = `
         <td>${r.week}</td>
         <td><span class="chip chip-${r.solver}">${r.solver}</span></td>
         <td>${elapsed}</td>
         <td>${r.num_requests}</td>
         <td>${r.num_assigned}</td>
-        <td>${r.penalty}</td>`;
+        <td>${r.error ? "—" : r.penalty}</td>
+        <td>${status}</td>`;
       runsBody.appendChild(tr);
     });
   }
@@ -373,23 +418,30 @@ function bindButtons() {
     card.textContent = "Running solver…";
     try {
       const res = await api("/api/solve", { method: "POST", body: {} });
-      const fallback = res.fallback_used ? "  (improved: backtracking timed out → greedy fallback)\n" : "";
-      const lines = res.run.assignments.map((slot, idx) =>
-        slot === -1
-          ? `  Request ${idx}: not assigned`
-          : `  Request ${idx}: -> slot ${slot}`
-      );
+      const comparisons = res.comparison_results || [];
+      const comparisonLines = comparisons.map((r) => {
+        if (r.error) return `  ${r.solver.padEnd(8)} failed: ${r.error}`;
+        const fb = r.fallback_used ? " (fallback)" : "";
+        return `  ${r.solver.padEnd(8)} ${r.elapsed_ms.toFixed(2).padStart(8)} ms | assigned ${r.num_assigned}/${r.num_requests} | penalty ${r.penalty}${fb}`;
+      });
+      const commitLine = res.run
+        ? `Committed schedule: ${res.run.solver} (week ${res.run.week})`
+        : `No schedule committed: ${res.commit_error || "selected solver failed"}`;
+      const assignmentLines = res.run
+        ? res.run.assignments.map((slot, idx) =>
+            slot === -1
+              ? `  Request ${idx}: not assigned`
+              : `  Request ${idx}: -> slot ${slot}`
+          )
+        : [];
       card.classList.add("ok");
       card.textContent =
-        `Solver:  ${res.run.solver}\n` +
-        `Week:    ${res.run.week}\n` +
-        `Elapsed: ${res.run.elapsed_ms.toFixed(2)} ms\n` +
-        `Penalty: ${res.run.penalty}\n` +
-        `Assigned: ${res.run.num_assigned}/${res.run.num_requests}\n` +
-        fallback +
+        `Benchmarked all algorithms:\n` +
+        comparisonLines.join("\n") +
         `\n` +
-        lines.join("\n");
-      showToast(`Solved in ${res.run.elapsed_ms.toFixed(1)} ms with "${res.run.solver}"`);
+        `\n${commitLine}\n` +
+        assignmentLines.join("\n");
+      showToast(res.run ? `Committed "${res.run.solver}" after benchmarking all algorithms` : "Benchmarked all algorithms; no schedule committed", res.run ? "ok" : "warn");
       await refresh();
     } catch (e) {
       card.classList.add("err");

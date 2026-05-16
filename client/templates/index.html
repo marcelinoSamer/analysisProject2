@@ -25,6 +25,7 @@
         <button data-solver="baseline" class="switch-btn" role="tab" title="Exhaustive backtracking (Human_Solution/baseline.cpp)">Baseline</button>
         <button data-solver="improved" class="switch-btn active" role="tab" title="Preprocessed backtracking + greedy fallback (Human_Solution/improved.cpp)">Improved</button>
         <button data-solver="ai" class="switch-btn" role="tab" title="Scarcity-aware greedy (AI_Solution/main.cpp)">AI</button>
+        <button data-solver="greedy" class="switch-btn" role="tab" title="Naive first-feasible greedy baseline">Greedy</button>
       </div>
     </div>
   </header>
@@ -148,15 +149,19 @@
     <!-- ============================================== Performance -->
     <section class="panel hidden" id="tab-performance">
       <div class="card">
-        <h2>Solver run history</h2>
-        <p class="hint">Each row is one weekly solve. Flip the solver switch in the header and re-run to compare.</p>
+        <h2>Algorithm benchmark history</h2>
+        <p class="hint">Every Run Solver click benchmarks Baseline, Improved, AI, and a naive Greedy algorithm on the same pending requests. The selected solver is the only one committed to the weekly schedule.</p>
+        <div id="benchmark-summary" class="stats-grid"></div>
+        <div id="benchmark-chart" class="bar-chart"></div>
         <table id="table-runs">
-          <thead><tr><th>Week</th><th>Solver</th><th>Elapsed (ms)</th><th>Requests</th><th>Assigned</th><th>Penalty</th></tr></thead>
+          <thead><tr><th>Week</th><th>Solver</th><th>Elapsed (ms)</th><th>Requests</th><th>Assigned</th><th>Penalty</th><th>Status</th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="legend">
           <span class="chip chip-baseline">baseline</span>
           <span class="chip chip-improved">improved</span>
+          <span class="chip chip-ai">ai</span>
+          <span class="chip chip-greedy">greedy</span>
         </div>
       </div>
     </section>

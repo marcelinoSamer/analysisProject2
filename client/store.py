@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 URGENCY_LEVELS = ("exploratory", "normal", "blocker")
 URGENCY_WEIGHT = {"exploratory": 1, "normal": 2, "blocker": 3}
-SUPPORTED_SOLVERS = ("baseline", "improved", "ai")
+SUPPORTED_SOLVERS = ("baseline", "improved", "ai", "greedy")
 
 
 @dataclass
@@ -88,6 +88,7 @@ class HotStore:
             self.starvation: Dict[int, int] = {}
             self.schedule: Dict[int, List[Dict[str, Any]]] = {}
             self.solver_runs: List[SolverRun] = []
+            self.benchmark_runs: List[Dict[str, Any]] = []
             self.current_week: int = 0
             self.active_solver: str = "improved"
 
@@ -265,6 +266,58 @@ class HotStore:
             del self.requests[request_idx]
 
     # ------------------------------------------------- weekly-result book-keeping
+    def evaluate_assignments(
+        self,
+        assignments: List[int],
+        elapsed_ms: float = 0.0,
+        error: Optional[str] = None,
+        fallback_used: bool = False,
+    ) -> Dict[str, Any]:
+        """Compute display metrics without mutating the hot state."""
+        with self._lock:
+            penalty_total = 0
+            assigned_count = 0
+            for req_idx, slot_id in enumerate(assignments):
+                if slot_id == -1:
+                    continue
+                if not (0 <= req_idx < len(self.requests)):
+                    continue
+                if not (0 <= slot_id < len(self.slots)):
+                    continue
+                req = self.requests[req_idx]
+                slot = self.slots[slot_id]
+                delay = max(0, slot.week - req.week)
+                penalty_total += _penalty(req.urgency, delay)
+                assigned_count += 1
+
+            return {
+                "elapsed_ms": elapsed_ms,
+                "assignments": list(assignments),
+                "penalty": penalty_total,
+                "num_requests": len(self.requests),
+                "num_assigned": assigned_count,
+                "error": error,
+                "fallback_used": fallback_used,
+            }
+
+    def record_benchmark(
+        self,
+        week: int,
+        selected_solver: str,
+        results: List[Dict[str, Any]],
+        committed_solver: Optional[str],
+    ) -> Dict[str, Any]:
+        """Persist one all-algorithm benchmark batch for the Performance tab."""
+        with self._lock:
+            batch = {
+                "week": week,
+                "selected_solver": selected_solver,
+                "committed_solver": committed_solver,
+                "results": results,
+            }
+            self.benchmark_runs.append(batch)
+            return batch
+
     def commit_assignments(
         self, assignments: List[int], solver: str, elapsed_ms: float
     ) -> SolverRun:
@@ -356,6 +409,7 @@ class HotStore:
                     str(w): rows for w, rows in sorted(self.schedule.items())
                 },
                 "solver_runs": [r.to_dict() for r in self.solver_runs[-50:]],
+                "benchmark_runs": self.benchmark_runs[-50:],
                 "urgency_levels": list(URGENCY_LEVELS),
                 "known_topics": known_topics,
                 "saved_snapshot": {
