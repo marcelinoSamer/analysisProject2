@@ -9,7 +9,6 @@ using namespace std;
 
 typedef long long ll;
 const ll INF = 1e18;
-const ll K = 1000000000LL;
 
 // Weights
 const ll ALPHA_URGENCY = 5;
@@ -88,7 +87,7 @@ ll calculate_weight(const Request& r, const Slot& s, int current_week) {
   ll age = r.age(current_week);
   
   ll benefit = ALPHA_URGENCY * u + BETA_TOPIC_MATCH * topic_score + GAMMA_PREFERRED_MENTOR * p + DELTA_AGE * age;
-  return benefit + K;
+  return benefit;
 }
 
 
@@ -259,7 +258,7 @@ void solve() {
             global_slots[A[e.slot_idx]].is_assigned   = true;
             
             ll raw_weight = calculate_weight(global_requests[P[e.req_idx]], global_slots[A[e.slot_idx]], w);
-            total_benefit += (raw_weight - K);
+            total_benefit += (raw_weight);
             total_served_requests++;
             
             cout << "[Week " << w << "] Assigned Request " << global_requests[P[e.req_idx]].id
