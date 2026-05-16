@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mentorship Scheduler · Client</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">MSch</span>
+      <span class="brand-text">Mentorship Scheduler</span>
+    </div>
+    <div class="meta">
+      <span class="meta-item">Week <strong id="meta-week">0</strong></span>
+      <span class="meta-item">Fellows <strong id="meta-fellows">0</strong></span>
+      <span class="meta-item">Mentors <strong id="meta-mentors">0</strong></span>
+      <span class="meta-item">Slots <strong id="meta-slots">0</strong></span>
+      <span class="meta-item">Pending <strong id="meta-pending">0</strong></span>
+    </div>
+    <div class="solver-switch" title="Switch the scheduling backend mid-run to compare performance">
+      <span class="switch-label">Solver:</span>
+      <div class="switch" id="solver-switch" role="tablist">
+        <button data-solver="baseline" class="switch-btn" role="tab">Baseline</button>
+        <button data-solver="improved" class="switch-btn active" role="tab">Improved</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="requests">Submit Request</button>
+    <button class="tab" data-tab="mentors">Mentors &amp; Slots</button>
+    <button class="tab" data-tab="schedule">Weekly Schedule</button>
+    <button class="tab" data-tab="performance">Performance</button>
+    <button class="tab" data-tab="io">CSV / Flush</button>
+  </nav>
+
+  <main>
+    <!-- ============================================== Submit Request -->
+    <section class="panel" id="tab-requests">
+      <div class="row">
+        <div class="card">
+          <h2>Submit a request</h2>
+          <p class="hint">Fellows submit one request per week. The request will be queued and scheduled by the next solve.</p>
+          <form id="form-request">
+            <label>Fellow ID
+              <input name="fellow_id" type="number" min="0" required />
+            </label>
+            <label>Topic
+              <input name="topic" type="text" placeholder="e.g. algorithms" required />
+            </label>
+            <label>Urgency
+              <select name="urgency">
+                {% for u in urgency_levels %}
+                <option value="{{ u }}" {% if u == 'normal' %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Available Slot IDs <span class="hint inline">(comma- or space-separated)</span>
+              <input name="available_slot_ids" type="text" placeholder="0, 2, 5" required />
+            </label>
+            <label>Week <span class="hint inline">(blank = current week)</span>
+              <input name="week" type="number" min="0" />
+            </label>
+            <button type="submit" class="primary">Queue request</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Pending requests this week</h2>
+          <table id="table-requests">
+            <thead><tr><th>#</th><th>Fellow</th><th>Topic</th><th>Urgency</th><th>Slots</th><th>Week</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="row" style="margin-top:14px;gap:10px">
+            <button id="btn-solve" class="primary big">Run solver →</button>
+            <button id="btn-add-fellow" class="ghost">+ Register Fellow</button>
+          </div>
+          <div id="solve-result" class="result-card hidden"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== Mentors / Slots -->
+    <section class="panel hidden" id="tab-mentors">
+      <div class="row">
+        <div class="card">
+          <h2>Add / update mentor</h2>
+          <form id="form-mentor">
+            <label>Mentor ID
+              <input name="mentor_id" type="number" min="0" required />
+            </label>
+            <label>Specialties <span class="hint inline">(comma- or space-separated)</span>
+              <input name="specialties" type="text" placeholder="algorithms, ml" required />
+            </label>
+            <button type="submit" class="primary">Save mentor</button>
+          </form>
+
+          <h3 style="margin-top:24px">Mentors</h3>
+          <table id="table-mentors">
+            <thead><tr><th>ID</th><th>Specialties</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Add a slot</h2>
+          <form id="form-slot">
+            <label>Mentor ID
+              <input name="mentor_id" type="number" min="0" required />
+            </label>
+            <label>Week
+              <input name="week" type="number" min="0" required />
+            </label>
+            <button type="submit" class="primary">Add slot</button>
+          </form>
+
+          <h3 style="margin-top:24px">Slots (slot ID = row index)</h3>
+          <table id="table-slots">
+            <thead><tr><th>Slot ID</th><th>Mentor</th><th>Week</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== Weekly Schedule -->
+    <section class="panel hidden" id="tab-schedule">
+      <div class="card">
+        <h2>Weekly schedule per mentor</h2>
+        <p class="hint">Built incrementally from every successful solver run. Empty cells = unassigned slot.</p>
+        <div class="schedule-wrap" id="schedule-grid">
+          <p class="empty">No weekly schedule yet — submit some requests and run the solver.</p>
+        </div>
+
+        <h3 style="margin-top:24px">Starvation counters (s<sub>f</sub>)</h3>
+        <table id="table-starvation">
+          <thead><tr><th>Fellow</th><th>s<sub>f</sub></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================================== Performance -->
+    <section class="panel hidden" id="tab-performance">
+      <div class="card">
+        <h2>Solver run history</h2>
+        <p class="hint">Each row is one weekly solve. Flip the solver switch in the header and re-run to compare.</p>
+        <table id="table-runs">
+          <thead><tr><th>Week</th><th>Solver</th><th>Elapsed (ms)</th><th>Requests</th><th>Assigned</th><th>Penalty</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="legend">
+          <span class="chip chip-baseline">baseline</span>
+          <span class="chip chip-improved">improved</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== I/O panel -->
+    <section class="panel hidden" id="tab-io">
+      <div class="row">
+        <div class="card">
+          <h2>Import a mid-lifecycle CSV</h2>
+          <p class="hint">Replaces the current hot state. See <code>sample.csv</code> for the format.</p>
+          <form id="form-import" enctype="multipart/form-data">
+            <label>CSV file
+              <input type="file" name="file" accept=".csv,text/csv,text/plain" />
+            </label>
+            <p class="hint" style="margin:6px 0 4px">…or paste CSV directly:</p>
+            <textarea name="csv" rows="9" placeholder="type,...\nmentor,1,algorithms;ml\nslot,1,0\n..."></textarea>
+            <button type="submit" class="primary">Load snapshot</button>
+          </form>
+          <div id="import-result" class="result-card hidden"></div>
+        </div>
+
+        <div class="card">
+          <h2>Flush the world</h2>
+          <p class="hint">Wipes all fellows, mentors, slots, requests, history and resets the week counter to 0.</p>
+          <button id="btn-flush" class="danger big">Flush everything</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

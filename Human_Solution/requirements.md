@@ -1,103 +1,125 @@
 # TA/Mentor Slot Scheduling Requirements
 
-## 1. Real-World Problem
+## 1. Problem Statement
 
-The system schedules academic help requests from students/fellows into a limited set of fixed weekly TA or mentor office-hour slots. Each request asks for help on a specific topic, has a submitted week, an urgency level, and a list of slots the student can attend. Each slot belongs to one mentor and happens in a specific week.
+The system schedules academic help requests from fellows into fixed weekly mentor office-hour slots. Each request belongs to one fellow, asks for help on one topic, has a request week, has an urgency level, and lists the slots the fellow can attend. Each slot belongs to one mentor and occurs in one week.
 
-The concrete problem is: given many student help requests over a multi-week planning horizon and a fixed set of mentor slots, assign as many requests as possible to feasible slots while reducing unfair waiting time, especially for urgent requests.
+The goal is to produce a feasible partial schedule that serves as many requests as possible. When multiple schedules serve the same number of requests, the preferred schedule is the one with the smallest urgency-weighted waiting cost.
 
-This is not a flexible calendar-building problem. The system does not create new slots or move existing ones. It chooses among already-existing weekly slots. The current implementation also treats each slot as having capacity one, so a slot can serve at most one request.
+This is a matching and scheduling problem over existing slots. The scheduler does not create new slots, move slots, change mentor specialties, or assign more than one request to the same slot.
 
-## 2. Inputs and Outputs
+## 2. Data Model
 
-### Inputs
+The scheduler uses four record types:
 
-The system receives four main groups of data:
+- `Fellow`: an integer `id`.
+- `Mentor`: an integer `id` and a list of topic specialties.
+- `Slot`: a `mentor_id` and a `week`.
+- `Request`: a `fellow_id`, a requested topic, an urgency level, a request `week`, and a list of available slot IDs.
 
-- Fellows/students: a list of fellow IDs.
-- Mentors/TAs: a list of mentor IDs and each mentor's topic specialties.
-- Slots: a list of fixed office-hour slots, where each slot has a mentor ID and a week number.
-- Requests: a list of help requests. Each request includes the fellow ID, available slot IDs, requested topic, urgency level, and request week.
+Slot IDs are the zero-based positions of slots in the input. Request IDs are the zero-based positions of requests in the input. Fellow and mentor IDs are integer labels supplied by the input.
 
-The urgency levels are:
+Urgency has three accepted values:
 
-- `exploratory`: low priority.
-- `normal`: medium priority.
-- `blocker`: high priority.
+- `exploratory`: low urgency.
+- `normal`: medium urgency.
+- `blocker`: high urgency.
 
-In the current input format, the first line gives:
+For optimization, these urgency levels use weights `1`, `2`, and `3`, respectively.
+
+## 3. Input Format
+
+Input is whitespace-separated. Line breaks are used for readability, but the parser reads tokens in the following order:
 
 ```text
 F M S R
+fellow_id_0 fellow_id_1 ... fellow_id_(F-1)
+mentor_id_0 K_0 specialty_0_1 ... specialty_0_K0
+...
+mentor_id_(M-1) K_(M-1) specialty_(M-1)_1 ... specialty_(M-1)_K
+slot_0_mentor_id slot_0_week
+...
+slot_(S-1)_mentor_id slot_(S-1)_week
+request_0_fellow_id A_0 slot_id_0_1 ... slot_id_0_A0 request_0_topic request_0_urgency request_0_week
+...
+request_(R-1)_fellow_id A_(R-1) slot_id ... request_(R-1)_topic request_(R-1)_urgency request_(R-1)_week
 ```
 
-where `F` is the number of fellows, `M` is the number of mentors, `S` is the number of slots, and `R` is the number of requests. The remaining input lists fellows, mentors and specialties, slots, and requests in that order.
+Where:
 
-### Output
+- `F` is the number of fellows.
+- `M` is the number of mentors.
+- `S` is the number of slots.
+- `R` is the number of requests.
+- `K_i` is the number of specialties for mentor `i`.
+- `A_i` is the number of available slots listed for request `i`.
 
-The system produces an assignment for each request:
+Input requirements:
 
-- If assigned: the request ID, assigned slot ID, mentor ID, and slot week.
-- If not assigned: the request is marked `Not Assigned`.
+- Each slot's `mentor_id` must refer to a mentor in the mentor list.
+- Each request's available slot IDs must be valid slot positions from `0` to `S - 1`.
+- Topics and specialties are single-token strings.
+- Topic and specialty comparison is case-insensitive after normalization to lowercase.
+- Urgency strings must be exactly `exploratory`, `normal`, or `blocker`.
+- Weeks are integer planning periods. A request can only be assigned to a slot in the same week or a later week.
 
-Structurally, the output is a vector `assignments` of length `R`, where `assignments[i]` is either the assigned slot ID for request `i` or `-1` if request `i` cannot be scheduled.
+## 4. Output Format
 
-A useful extension would be a ranked waitlist for unassigned requests, ordered by urgency and accumulated waiting penalty. The current implementation does not print a separate ranked waitlist, but its penalty model gives the information needed to create one.
+The scheduler produces one output line per request, in request ID order:
 
-## 3. Assumptions and Constraints
+```text
+Request i: Assigned to Slot j (Mentor ID: m, Week: w)
+```
 
-The implementation makes the following assumptions:
+or:
 
-- Slots are fixed. The scheduler cannot create, delete, extend, or move slots.
-- Planning is weekly. Each request and each slot has a week number.
-- A student request can be assigned to at most one slot.
-- A slot can serve at most one request.
-- A request can only use slots listed in its availability list.
-- A request can only be assigned to a slot in the same week or a later week.
-- A mentor can only serve a request if the mentor has the requested topic as a specialty.
-- Topic names are normalized to lowercase before comparison.
-- Partial schedules are acceptable. If demand exceeds supply or no feasible slot exists, some requests may remain unassigned.
-- The primary fairness goal is to maximize the number of assigned requests.
-- The secondary fairness goal is to minimize weighted waiting delay, with higher urgency requests receiving larger penalties for delay.
+```text
+Request i: Not Assigned
+```
 
-When demand exceeds supply, the system should not fail. It should assign the largest feasible set of requests and leave the remaining requests unassigned. Unassigned requests receive an artificial delay penalty beyond the last available week, making them worse than scheduled requests when comparing otherwise similar solutions.
+Internally, the result is an `assignments` vector of length `R`. `assignments[i]` is the assigned slot ID for request `i`, or `-1` if request `i` is not scheduled.
 
-Fairness in this project is therefore defined as:
+The improved scheduler may print this notice before the assignment lines if the exact search exceeds the configured time limit:
 
-1. Serve as many requests as possible.
-2. Among schedules serving the same number of requests, prefer the schedule with lower total urgency-weighted waiting cost.
-3. Within the same urgency level, earlier requests should generally be favored over later ones.
+```text
+Backtracking timed out. Using greedy heuristic solution.
+```
 
-## 4. Formal Problem Definition
+## 5. Feasibility Constraints
 
-This can be modeled as a constrained matching and scheduling optimization problem.
+A schedule is feasible only if all of the following hold:
+
+- Each request is assigned to at most one slot.
+- Each slot is assigned to at most one request.
+- A request can only be assigned to a slot listed in its availability list.
+- A request can only be assigned to a slot whose week is greater than or equal to the request week.
+- A mentor can serve a request only when the mentor has the requested topic in their specialty list after lowercase normalization.
+- Requests that cannot be feasibly assigned may remain unassigned.
+
+The scheduler should not fail merely because demand exceeds supply. It should return the best partial schedule it can find under the algorithm being used.
+
+## 6. Optimization Objective
 
 Let:
 
 - `R` be the set of requests.
 - `S` be the set of slots.
-- `A_i` be the set of available slots for request `i`.
+- `A_i` be the available slot set for request `i`.
 - `topic(i)` be the requested topic for request `i`.
 - `week(i)` be the request week for request `i`.
 - `mentor(j)` be the mentor assigned to slot `j`.
 - `week(j)` be the week of slot `j`.
-- `spec(m)` be the set of specialties for mentor `m`.
+- `spec(m)` be the specialty set for mentor `m`.
 - `u_i` be the urgency weight for request `i`.
 
-The code uses urgency weights based on the enum value plus one:
-
-- `exploratory`: 1
-- `normal`: 2
-- `blocker`: 3
-
-Define decision variable:
+Define:
 
 ```text
 x_ij = 1 if request i is assigned to slot j
 x_ij = 0 otherwise
 ```
 
-Feasibility constraints:
+Feasibility requires:
 
 ```text
 sum over j in S of x_ij <= 1                 for every request i
@@ -107,52 +129,71 @@ x_ij = 0 if week(j) < week(i)
 x_ij = 0 if topic(i) is not in spec(mentor(j))
 ```
 
-Delay for an assigned request is:
+For an assigned request, delay is:
 
 ```text
 d_i = week(assigned_slot_i) - week(i)
 ```
 
-The implemented delay penalty is:
+The weighted delay penalty is:
 
 ```text
 penalty(i) = u_i * d_i(d_i + 1)(2d_i + 1) / 6
 ```
 
-This is the urgency weight multiplied by the sum of squares from `1` to `d_i`, so longer waits become increasingly expensive.
+This is the urgency weight multiplied by the sum of squares from `1` to `d_i`. A delay of `0` therefore has penalty `0`, and longer waits become increasingly expensive.
 
-The optimization goal is lexicographic:
+The objective is lexicographic:
 
-```text
 1. Maximize the number of assigned requests.
-2. Subject to that, minimize total weighted delay penalty.
-```
+2. Among schedules with the same number of assigned requests, minimize total weighted delay penalty.
 
-In a single expression, this can be understood as maximizing assignment count first, then minimizing:
+For comparison during exact search, unassigned requests receive an artificial delay based on a week beyond the last available slot. This keeps unassigned requests more expensive than scheduled requests when evaluating otherwise similar schedules.
 
-```text
-sum over i in R of penalty(i)
-```
+## 7. Baseline Algorithm
 
-with a large artificial delay assigned to unassigned requests.
+The baseline algorithm is an exact exhaustive search for small and moderate inputs. It establishes the target behavior for the optimization objective.
 
-## 5. Baseline Solution
+For each request in input order, the search explores two kinds of choices:
 
-A simple baseline solution is first-come-first-served greedy assignment:
+1. Leave the request unassigned.
+2. Tentatively assign the request to each slot in its availability list.
 
-1. Read requests in input order.
-2. For each request, scan its available slots.
-3. Assign the request to the first unused slot that is feasible by week and mentor topic.
-4. If no feasible unused slot exists, mark the request as unassigned.
+After a complete assignment candidate is built, the algorithm validates the candidate against the slot-capacity, request-capacity, week, availability, and mentor-topic constraints. If the candidate is feasible, it computes:
 
-This baseline is easy to understand and fast. It works well in easy cases where there are enough compatible slots, availability lists do not overlap much, and request order already matches priority.
+- the number of assigned requests;
+- the total urgency-weighted delay cost for assigned requests;
+- the artificial delay cost for unassigned requests.
 
-However, it can fail when requests compete for the same slots. A low-urgency or flexible request may take a slot that a later high-urgency request needs. It also may not minimize waiting time, because choosing the first available feasible slot can block a better global assignment.
+The baseline keeps the candidate with the largest assignment count. Ties are broken by the smallest total cost.
 
-The colleague's `baseline.cpp` is stronger than a pure first-come-first-served greedy algorithm: it exhaustively enumerates possible assignments, checks all feasibility constraints, maximizes the assignment count, and breaks ties by total delay penalty. This makes it a correctness baseline for small inputs, but it can be slow because the search grows exponentially with the number of requests and available slots.
+This approach is useful as a correctness reference because it directly searches the assignment space and applies the same objective used by the project. Its expected cost grows exponentially with the number of requests and available slot choices, so it is intended for cases where exhaustive search is practical.
 
-The improved implementation keeps the exact backtracking approach when it finishes within the configured time limit, but falls back to a greedy heuristic when exhaustive search takes too long. The heuristic processes slots by week and selects a request using urgency-weighted delay, which is faster for larger cases but can still miss the globally optimal schedule.
+## 8. Improved Algorithm
+
+The improved scheduler uses the same objective and feasibility rules, but adds preprocessing and a timeout-controlled fallback.
+
+Before scheduling, it:
+
+- normalizes topics and specialties to lowercase;
+- compresses topic strings to integer IDs for faster comparison;
+- maps each slot to its mentor record;
+- removes unavailable choices that are already impossible because of week or topic constraints.
+
+It then runs an optimized backtracking search. Instead of validating all constraints only at the end, it tracks which slots are already taken while assigning requests. The search still evaluates complete candidates by assignment count first and weighted delay cost second.
+
+The exact search is limited by `SOLUTION_MAX_TIME`, with periodic checks controlled by `TIME_CHECK_INTERVAL`. If the exact search finishes within the limit, its result is returned. If it times out, the scheduler uses a greedy heuristic.
+
+The greedy fallback:
+
+1. Preprocesses requests using the same feasibility filtering.
+2. Builds per-slot request queues grouped by urgency.
+3. Sorts each urgency queue by request week so earlier requests are considered first within the same urgency.
+4. Processes slots in increasing week order.
+5. For each slot, considers the first untaken request from each urgency queue and assigns the request with the largest urgency-weighted delay penalty for that slot.
+
+The fallback is designed to produce a feasible schedule quickly for larger inputs. It follows the same fairness idea as the exact objective, but because it makes local decisions slot by slot, it is a heuristic rather than a guarantee of global optimality.
 
 ## Summary
 
-The project is best described as a weekly mentor-slot matching problem with fixed slot capacity, topic compatibility, request availability, urgency, and waiting-time fairness. The required output is an assignment from requests to slots, allowing partial schedules when capacity or compatibility prevents every request from being served.
+The project specifies a weekly mentor-slot matching system with fixed slot capacity, topic compatibility, request availability, urgency, and weighted waiting-time fairness. The baseline algorithm defines the exact optimization behavior by exhaustive search. The improved algorithm preserves that behavior when exact search is practical and uses a faster greedy fallback when the search exceeds the configured time limit.

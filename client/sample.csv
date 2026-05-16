@@ -1,0 +1,32 @@
+# Mid-lifecycle snapshot for the mentorship scheduler client.
+# Format: every row is tagged by its first column.
+#   meta,key,value                              -> session metadata
+#   mentor,id,specialty1;specialty2;...         -> a mentor row
+#   slot,mentor_id,week                         -> a single weekly slot (slot_id == row order)
+#   fellow,id,starvation                        -> existing fellow + their s_f counter
+#   request,fellow_id,topic,urgency,week,slot_ids_separated_by_semicolons
+type,a,b,c,d,e
+meta,current_week,4
+meta,solver,improved
+mentor,1,algorithms;ml
+mentor,2,algorithms;systems
+mentor,3,cyber;net
+mentor,4,ml;data
+slot,1,4
+slot,1,5
+slot,2,4
+slot,2,5
+slot,3,4
+slot,3,5
+slot,4,4
+slot,4,5
+fellow,10,2
+fellow,11,0
+fellow,12,3
+fellow,13,1
+fellow,14,0
+request,10,algorithms,blocker,4,0;1;2;3
+request,11,ml,normal,4,0;1;6;7
+request,12,ml,exploratory,4,6;7
+request,13,cyber,blocker,4,4;5
+request,14,systems,normal,4,2;3
