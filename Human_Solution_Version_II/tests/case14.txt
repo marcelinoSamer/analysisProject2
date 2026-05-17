@@ -1,0 +1,32 @@
+1 2 3
+1
+1 Coding
+WEEK 1
+1
+1 1 Mon10
+2
+101 1 Coding Mon10,Tue10 high 0
+102 2 Coding Mon10 low 0
+0
+0
+0
+WEEK 2
+2
+2 1 Mon10
+3 1 Tue10
+1
+103 3 Coding Mon10 high 0
+0
+0
+0
+
+###
+
+Optimal solution would match:
+101 => 3
+102 => 1
+103 => 2
+
+However, our solution only makes 2 assignments
+
+###
