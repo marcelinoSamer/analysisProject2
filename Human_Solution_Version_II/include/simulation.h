@@ -308,6 +308,7 @@ public:
 
   void handle_slot_reschedule(pair<int, int> t, int s_idx, pair<int, int> new_t) {
     if (slots[s_idx].state == SlotState::AVAILABLE) {
+      // Availble case
       auto old_t = slots[s_idx].time_block;
       slots[s_idx].time_block = new_t;
       weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
@@ -328,6 +329,7 @@ public:
         weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
       }
     } else {
+      // Assigned case
       auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
       if (it != L.end()) {
         int r_idx = it->first;
@@ -344,6 +346,7 @@ public:
             }
           }
         }
+        
         int best_non_r = -1;
         for(int r : P) {
           if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
@@ -352,32 +355,69 @@ public:
             }
           }
         }
+
+        // Check if the original pair is still compatible at the new time
+        ll self_match_score = calculate_weight(requests[r_idx], slots[s_idx], current_week);
+
         if (best_non_r != -1 && best_non_s != -1) {
+          // Option A: 2 Matches
           requests[best_non_r].state = RequestState::SERVED;
           slots[s_idx].state = SlotState::ASSIGNED;
           P.erase(find(P.begin(), P.end(), best_non_r));
-          A.erase(find(A.begin(), A.end(), s_idx));
           L.push_back({best_non_r, s_idx});
-          L.push_back({r_idx, best_non_s});
-          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
-          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
-        } else if (best_non_r != -1) {
-          requests[best_non_r].state = RequestState::PENDING;
-          slots[s_idx].state = SlotState::ASSIGNED;
-          P.erase(find(P.begin(), P.end(), best_non_r));
-          L.push_back({best_non_r, s_idx});
-          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
-        } else if (best_non_s != -1) {
-          slots[best_non_s].state = SlotState::ASSIGNED;
+          
           requests[r_idx].state = RequestState::SERVED;
-          A.erase(find(A.begin(), A.end(), best_non_s));
+          slots[best_non_s].state = SlotState::ASSIGNED;
           L.push_back({r_idx, best_non_s});
-          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
+          
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " assigned to Slot " + to_string(slots[best_non_s].id));
+        
         } else {
-          slots[s_idx].state = SlotState::AVAILABLE;
-          requests[r_idx].state = RequestState::PENDING;
-          A.push_back(s_idx);
-          P.push_back(r_idx);
+          // Option B: 1 Match
+          ll score_r = (best_non_r != -1) ? calculate_weight(requests[best_non_r], slots[s_idx], current_week) : -INF;
+          ll score_s = (best_non_s != -1) ? calculate_weight(requests[r_idx], slots[best_non_s], current_week) : -INF;
+
+          if (self_match_score >= score_r && self_match_score >= score_s && self_match_score != -INF) {
+            // Rematch them to each other
+            requests[r_idx].state = RequestState::SERVED;
+            slots[s_idx].state = SlotState::ASSIGNED;
+            L.push_back({r_idx, s_idx});
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " rematched to Slot " + to_string(slots[s_idx].id) + " at new time.");
+            
+          } else if (score_r >= score_s && score_r != -INF) {
+            // Match best_non_r to s_idx
+            requests[best_non_r].state = RequestState::SERVED;
+            slots[s_idx].state = SlotState::ASSIGNED;
+            P.erase(find(P.begin(), P.end(), best_non_r));
+            L.push_back({best_non_r, s_idx});
+            
+            // r_idx must go back to P
+            requests[r_idx].state = RequestState::PENDING;
+            P.push_back(r_idx);
+            
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+            
+          } else if (score_s != -INF) {
+            // Match r_idx to best_non_s
+            requests[r_idx].state = RequestState::SERVED;
+            slots[best_non_s].state = SlotState::ASSIGNED;
+            A.erase(find(A.begin(), A.end(), best_non_s));
+            L.push_back({r_idx, best_non_s});
+            
+            // s_idx must go back to A
+            slots[s_idx].state = SlotState::AVAILABLE;
+            A.push_back(s_idx);
+            
+            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " assigned to Slot " + to_string(slots[best_non_s].id));
+            
+          } else {
+            // Option C: 0 Matches
+            slots[s_idx].state = SlotState::AVAILABLE;
+            requests[r_idx].state = RequestState::PENDING;
+            A.push_back(s_idx);
+            P.push_back(r_idx);
+          }
         }
       }
     }
