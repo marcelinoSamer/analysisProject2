@@ -237,15 +237,6 @@ public:
     L.clear();
   }
   
-
-  /*
-  Case 1 (Request cancellation): If not assigned, ignore. Otherwise, greadily assign its slot to the request with 
-  the heighest benefit if possible
-  Case 2 (Slot cancellation): If not assigned, ignore. Otherwise, greadily assign its slot to the request with 
-  the heighest benefit if possible
-  Case 3 (Slot reschduling): Some edges are removed. Otheredges can be added. Greadily re-consider all the possible edges.
-  This way, we can avoid rerunning the entire algorithm.
-  */
   void handle_request_cancellation(pair<int, int> t, int r_idx) {
     if (requests[r_idx].state == RequestState::PENDING) {
       auto it = find(P.begin(), P.end(), r_idx);
@@ -315,27 +306,6 @@ public:
     }
   }
 
-  /*
-  if (slots[s_idx].state == SlotState::AVAILABLE) {
-    auto old_t = slots[s_idx].time_block;
-    slots[s_idx].time_block = new_t;
-    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
-    state_changed = true;
-  } else {
-    auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
-    if (it != L.end()) {
-      int r_idx = it->first;
-      L.erase(it);
-      auto old_t = slots[s_idx].time_block;
-      slots[s_idx].time_block = new_t;
-      slots[s_idx].state = SlotState::AVAILABLE;
-      requests[r_idx].state = RequestState::PENDING;
-      A.push_back(s_idx);
-      P.push_back(r_idx);
-      weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (assigned): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second) + " (Request " + to_string(requests[r_idx].id) + " released)");
-    state_changed = true;
-  }
-  */
   void handle_slot_reschedule(pair<int, int> t, int s_idx, pair<int, int> new_t) {
     if (slots[s_idx].state == SlotState::AVAILABLE) {
       auto old_t = slots[s_idx].time_block;
