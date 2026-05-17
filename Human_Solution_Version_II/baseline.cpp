@@ -188,7 +188,7 @@ void solve() {
         r_obj.preferred_mentor = pref_m;
         r_obj.submission_week = w;
         
-        week_req_ids.push_back(global_requests.size());
+        week_req_ids.push_back(int(global_requests.size()));
         global_requests.push_back(r_obj);
       }
       
@@ -251,11 +251,11 @@ void solve() {
         
         for (auto& e : edges) {
           if (!req_used[e.req_idx] && !slot_used[e.slot_idx]) {
-            req_used[e.req_idx]  = true;
+            req_used[e.req_idx] = true;
             slot_used[e.slot_idx] = true;
             
-            global_requests[P[e.req_idx]].is_served  = true;
-            global_slots[A[e.slot_idx]].is_assigned   = true;
+            global_requests[P[e.req_idx]].is_served = true;
+            global_slots[A[e.slot_idx]].is_assigned = true;
             
             ll raw_weight = calculate_weight(global_requests[P[e.req_idx]], global_slots[A[e.slot_idx]], w);
             total_benefit += (raw_weight);

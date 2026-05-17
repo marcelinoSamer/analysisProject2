@@ -148,7 +148,6 @@ public:
     for (int idx : new_reqs) P.push_back(idx);
     for (int idx : new_slots) A.push_back(idx);
 
-
     // Check if there are no matching slots for any request
     for(auto &p : P) {
       bool has_no_matching_slot = true;
@@ -158,7 +157,7 @@ public:
           break;
         }
       }
-      if(has_no_matching_slot) {
+      if (has_no_matching_slot) {
         unserved_reasons[p] = "no feasible slot";
       }
     }
@@ -212,23 +211,11 @@ public:
       if (req_cancels_at.count(t)) {
         for (int r_idx : req_cancels_at[t]) {
           if (requests[r_idx].state == RequestState::PENDING) {
-            auto it = find(P.begin(), P.end(), r_idx);
-            if (it != P.end()) P.erase(it);
-            requests[r_idx].state = RequestState::CANCELED;
-            unserved_reasons[r_idx] = "request canceled";
-            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (pending)");
-            state_changed = true;
+            handle_request_cancellation(t, r_idx, -1);
           } else {
             auto it = find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p) { return p.first == r_idx; });
             if (it != L.end()) {
-              int s_idx = it->second;
-              L.erase(it);
-              requests[r_idx].state = RequestState::CANCELED;
-              unserved_reasons[r_idx] = "request canceled";
-              slots[s_idx].state = SlotState::AVAILABLE;
-              A.push_back(s_idx);
-              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (breaking assignment with Slot " + to_string(slots[s_idx].id) + ")");
-              state_changed = true;
+              handle_request_cancellation(t, r_idx, it->second);
             }
           }
         }
@@ -300,6 +287,43 @@ public:
     L.clear();
   }
   
+
+  /*
+  Case 1 (Request cancellation): If not assigned, ignore. Otherwise, greadily assign its slot to the request with 
+  the heighest benefit if possible
+  Case 2 (Slot cancellation): If not assigned, ignore. Otherwise, greadily assign its slot to the request with 
+  the heighest benefit if possible
+  Case 3 (Slot reschduling): Some edges are removed. Otheredges can be added. Greadily re-consider all the possible edges.
+  This way, we can avoid rerunning the entire algorithm.
+  */
+  void handle_request_cancellation(pair<int, int> t, int r_idx, int s_idx = -1) {
+    auto it = find(P.begin(), P.end(), r_idx);
+    if (it != P.end()) P.erase(it);
+    requests[r_idx].state = RequestState::CANCELED;
+    unserved_reasons[r_idx] = "request canceled";
+    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled");
+    if (s_idx != -1) {
+      L.erase(find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p){ return p.first == r_idx; }));
+      slots[s_idx].state = SlotState::AVAILABLE;
+      A.push_back(s_idx);
+      // gready
+      int best_r = -1;
+      for(int r : P) {
+        if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
+          if (best_r == -1 || calculate_weight(requests[r], slots[s_idx], current_week) > calculate_weight(requests[best_r], slots[s_idx], current_week)) {
+            best_r = r;
+          }
+        }
+      }
+      if (best_r != -1) {
+        requests[best_r].state = RequestState::SERVED;
+        A.pop_back();
+        L.push_back({best_r, s_idx});
+        weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+      }
+    }
+  }
+
   void finalize_assignment(int r_idx, int s_idx) {
     requests[r_idx].state = RequestState::SERVED;
     
