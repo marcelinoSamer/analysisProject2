@@ -205,8 +205,6 @@ public:
       }
       L = next_L;
       
-      bool state_changed = false;
-      
       // 1. Request Cancellations
       if (req_cancels_at.count(t)) {
         for (int r_idx : req_cancels_at[t]) {
@@ -217,21 +215,7 @@ public:
       // 2. Slot Cancellations
       if (slot_cancels_at.count(t)) {
         for (int s_idx : slot_cancels_at[t]) {
-          if (slots[s_idx].state == SlotState::AVAILABLE) {
-            // handle_slot_cancellation(t, s_idx, -1);
-          } else {
-            // handle_slot_cancellation(t, s_idx, )
-            auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
-            if (it != L.end()) {
-              int r_idx = it->first;
-              L.erase(it);
-              slots[s_idx].state = SlotState::CANCELED;
-              requests[r_idx].state = RequestState::PENDING;
-              P.push_back(r_idx);
-              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (breaking assignment with Request " + to_string(requests[r_idx].id) + ")");
-              state_changed = true;
-            }
-          }
+          handle_slot_cancellation(t, s_idx);
         }
       }
 
@@ -240,32 +224,8 @@ public:
         for (const auto& sr : slot_rescheds_at[t]) {
           int s_idx = sr.first;
           auto new_t = sr.second;
-          
-          if (slots[s_idx].state == SlotState::AVAILABLE) {
-            auto old_t = slots[s_idx].time_block;
-            slots[s_idx].time_block = new_t;
-            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
-            state_changed = true;
-          } else {
-            auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
-            if (it != L.end()) {
-              int r_idx = it->first;
-              L.erase(it);
-              auto old_t = slots[s_idx].time_block;
-              slots[s_idx].time_block = new_t;
-              slots[s_idx].state = SlotState::AVAILABLE;
-              requests[r_idx].state = RequestState::PENDING;
-              A.push_back(s_idx);
-              P.push_back(r_idx);
-              weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (assigned): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second) + " (Request " + to_string(requests[r_idx].id) + " released)");
-              state_changed = true;
-            }
-          }
+          handle_slot_reschedule(t, s_idx, new_t);
         }
-      }
-      
-      if (state_changed) {
-        run_core_matching();
       }
     }
     
@@ -297,10 +257,90 @@ public:
       auto it = find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p){ return p.first == r_idx; });
       if (it != L.end()) {
         L.erase(it);
+        weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (assigned)");
+        int s_idx = it->second;
+        slots[s_idx].state = SlotState::AVAILABLE;
+        A.push_back(s_idx);
+        int best_r = -1;
+        for(int r : P) {
+          if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
+            if (best_r == -1 || calculate_weight(requests[r], slots[s_idx], current_week) > calculate_weight(requests[best_r], slots[s_idx], current_week)) {
+              best_r = r;
+            }
+          }
+        }
+        if (best_r != -1) {
+          requests[best_r].state = RequestState::SERVED;
+          A.erase(find(A.begin(), A.end(), s_idx));
+          P.erase(find(P.begin(), P.end(), best_r));
+          L.push_back({best_r, s_idx});
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+        }
       }
-      int s_idx = it->second;
+    }
+  }
+
+  void handle_slot_cancellation(pair<int, int> t, int s_idx)  {
+    if (slots[s_idx].state == SlotState::AVAILABLE) {
+      auto it = find(A.begin(), A.end(), s_idx);
+      if (it != A.end()) A.erase(it);
+      slots[s_idx].state = SlotState::CANCELED;
+      weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (available)");
+    } else {
+      auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
+      if (it != L.end()) {
+        int r_idx = it->first;
+        L.erase(it);
+        slots[s_idx].state = SlotState::CANCELED;
+        requests[r_idx].state = RequestState::PENDING;
+        P.push_back(r_idx);
+        weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (breaking assignment with Request " + to_string(requests[r_idx].id) + ")");
+        int best_s = -1;
+        for(int s : A) {
+          if (is_compatible(requests[r_idx], slots[s])) {
+            if (best_s == -1 || calculate_weight(requests[r_idx], slots[s], current_week) > calculate_weight(requests[best_s], slots[s], current_week)) {
+              best_s = s;
+            }
+          }
+        }
+        if (best_s != -1) {
+          requests[r_idx].state = RequestState::SERVED;
+          slots[best_s].state = SlotState::ASSIGNED;
+          P.erase(find(P.begin(), P.end(), r_idx));
+          A.erase(find(A.begin(), A.end(), best_s));
+          L.push_back({r_idx, best_s});
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " assigned to Slot " + to_string(slots[best_s].id));
+        }
+      }
+    }
+  }
+
+  /*
+  if (slots[s_idx].state == SlotState::AVAILABLE) {
+    auto old_t = slots[s_idx].time_block;
+    slots[s_idx].time_block = new_t;
+    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
+    state_changed = true;
+  } else {
+    auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
+    if (it != L.end()) {
+      int r_idx = it->first;
+      L.erase(it);
+      auto old_t = slots[s_idx].time_block;
+      slots[s_idx].time_block = new_t;
       slots[s_idx].state = SlotState::AVAILABLE;
+      requests[r_idx].state = RequestState::PENDING;
       A.push_back(s_idx);
+      P.push_back(r_idx);
+      weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (assigned): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second) + " (Request " + to_string(requests[r_idx].id) + " released)");
+    state_changed = true;
+  }
+  */
+  void handle_slot_reschedule(pair<int, int> t, int s_idx, pair<int, int> new_t) {
+    if (slots[s_idx].state == SlotState::AVAILABLE) {
+      auto old_t = slots[s_idx].time_block;
+      slots[s_idx].time_block = new_t;
+      weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (available): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second));
       int best_r = -1;
       for(int r : P) {
         if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
@@ -311,20 +351,62 @@ public:
       }
       if (best_r != -1) {
         requests[best_r].state = RequestState::SERVED;
-        A.pop_back();
+        slots[s_idx].state = SlotState::ASSIGNED;
+        P.erase(find(P.begin(), P.end(), best_r));
+        A.erase(find(A.begin(), A.end(), s_idx));
         L.push_back({best_r, s_idx});
         weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
       }
-    }
-  }
+    } else {
+      auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
+      if (it != L.end()) {
+        int r_idx = it->first;
+        L.erase(it);
+        auto old_t = slots[s_idx].time_block;
+        slots[s_idx].time_block = new_t;
+        weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " rescheduled (assigned): t=" + to_string(old_t.second) + " -> t=" + to_string(new_t.second) + " (Request " + to_string(requests[r_idx].id) + " released)");
 
-  void handle_slot_cancellation(pair<int, int> t, int s_idx, int r_idx = -1)  {
-    auto it = find(A.begin(), A.end(), s_idx);
-    if (it != A.end()) A.erase(it);
-    slots[s_idx].state = SlotState::CANCELED;
-    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (available)");
-    if (r_idx != -1) {
-
+        int best_non_s = -1;
+        for(int s : A) {
+          if (s != s_idx && is_compatible(requests[r_idx], slots[s])) {
+            if (best_non_s == -1 || calculate_weight(requests[r_idx], slots[s], current_week) > calculate_weight(requests[r_idx], slots[best_non_s], current_week)) {
+              best_non_s = s;
+            }
+          }
+        }
+        int best_non_r = -1;
+        for(int r : P) {
+          if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
+            if (best_non_r == -1 || calculate_weight(requests[r], slots[s_idx], current_week) > calculate_weight(requests[best_non_r], slots[s_idx], current_week)) {
+              best_non_r = r;
+            }
+          }
+        }
+        if (best_non_r != -1 && best_non_s != -1) {
+          requests[best_non_r].state = RequestState::SERVED;
+          slots[s_idx].state = SlotState::AVAILABLE;
+          P.erase(find(P.begin(), P.end(), best_non_r));
+          A.erase(find(A.begin(), A.end(), s_idx));
+          L.push_back({best_non_r, s_idx});
+          L.push_back({r_idx, best_non_s});
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
+        } else if (best_non_r != -1) {
+          requests[best_non_r].state = RequestState::SERVED;
+          slots[s_idx].state = SlotState::AVAILABLE;
+          P.erase(find(P.begin(), P.end(), best_non_r));
+          A.erase(find(A.begin(), A.end(), s_idx));
+          L.push_back({best_non_r, s_idx});
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
+        } else if (best_non_s != -1) {
+          slots[best_non_s].state = SlotState::AVAILABLE;
+          requests[r_idx].state = RequestState::PENDING;
+          A.push_back(best_non_s);
+          P.push_back(r_idx);
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
+          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " released from Slot " + to_string(slots[best_non_s].id));
+        }
+      }
     }
   }
 
