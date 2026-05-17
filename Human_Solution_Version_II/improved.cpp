@@ -260,7 +260,7 @@ void solve() {
         // If no reason was explicitly set by a dynamic event or expiration,
         // and it's still pending at the end of the program
         reason = "lower priority"; 
-      }
+      } 
       cout << "Request " << global_requests[i].id << " (Week " << global_requests[i].submission_week << "): " << reason << "\n";
     }
   }

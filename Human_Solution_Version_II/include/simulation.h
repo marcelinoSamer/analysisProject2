@@ -210,14 +210,7 @@ public:
       // 1. Request Cancellations
       if (req_cancels_at.count(t)) {
         for (int r_idx : req_cancels_at[t]) {
-          if (requests[r_idx].state == RequestState::PENDING) {
-            handle_request_cancellation(t, r_idx, -1);
-          } else {
-            auto it = find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p) { return p.first == r_idx; });
-            if (it != L.end()) {
-              handle_request_cancellation(t, r_idx, it->second);
-            }
-          }
+          handle_request_cancellation(t, r_idx);
         }
       }
 
@@ -225,12 +218,9 @@ public:
       if (slot_cancels_at.count(t)) {
         for (int s_idx : slot_cancels_at[t]) {
           if (slots[s_idx].state == SlotState::AVAILABLE) {
-            auto it = find(A.begin(), A.end(), s_idx);
-            if (it != A.end()) A.erase(it);
-            slots[s_idx].state = SlotState::CANCELED;
-            weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (available)");
-            state_changed = true;
+            // handle_slot_cancellation(t, s_idx, -1);
           } else {
+            // handle_slot_cancellation(t, s_idx, )
             auto it = find_if(L.begin(), L.end(), [s_idx](const pair<int, int>& p) { return p.second == s_idx; });
             if (it != L.end()) {
               int r_idx = it->first;
@@ -296,17 +286,21 @@ public:
   Case 3 (Slot reschduling): Some edges are removed. Otheredges can be added. Greadily re-consider all the possible edges.
   This way, we can avoid rerunning the entire algorithm.
   */
-  void handle_request_cancellation(pair<int, int> t, int r_idx, int s_idx = -1) {
-    auto it = find(P.begin(), P.end(), r_idx);
-    if (it != P.end()) P.erase(it);
-    requests[r_idx].state = RequestState::CANCELED;
-    unserved_reasons[r_idx] = "request canceled";
-    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled");
-    if (s_idx != -1) {
-      L.erase(find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p){ return p.first == r_idx; }));
+  void handle_request_cancellation(pair<int, int> t, int r_idx) {
+    if (requests[r_idx].state == RequestState::PENDING) {
+      auto it = find(P.begin(), P.end(), r_idx);
+      if (it != P.end()) P.erase(it);
+      requests[r_idx].state = RequestState::CANCELED;
+      unserved_reasons[r_idx] = "request canceled";
+      weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[r_idx].id) + " canceled (Pending)");
+    } else {
+      auto it = find_if(L.begin(), L.end(), [r_idx](const pair<int, int>& p){ return p.first == r_idx; });
+      if (it != L.end()) {
+        L.erase(it);
+      }
+      int s_idx = it->second;
       slots[s_idx].state = SlotState::AVAILABLE;
       A.push_back(s_idx);
-      // gready
       int best_r = -1;
       for(int r : P) {
         if (is_compatible(requests[r], slots[s_idx]) && requests[r].state == RequestState::PENDING) {
@@ -321,6 +315,16 @@ public:
         L.push_back({best_r, s_idx});
         weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
       }
+    }
+  }
+
+  void handle_slot_cancellation(pair<int, int> t, int s_idx, int r_idx = -1)  {
+    auto it = find(A.begin(), A.end(), s_idx);
+    if (it != A.end()) A.erase(it);
+    slots[s_idx].state = SlotState::CANCELED;
+    weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Slot " + to_string(slots[s_idx].id) + " canceled (available)");
+    if (r_idx != -1) {
+
     }
   }
 
