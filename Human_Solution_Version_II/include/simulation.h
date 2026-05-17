@@ -384,7 +384,7 @@ public:
         }
         if (best_non_r != -1 && best_non_s != -1) {
           requests[best_non_r].state = RequestState::SERVED;
-          slots[s_idx].state = SlotState::AVAILABLE;
+          slots[s_idx].state = SlotState::ASSIGNED;
           P.erase(find(P.begin(), P.end(), best_non_r));
           A.erase(find(A.begin(), A.end(), s_idx));
           L.push_back({best_non_r, s_idx});
@@ -392,19 +392,22 @@ public:
           weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
           weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
         } else if (best_non_r != -1) {
-          requests[best_non_r].state = RequestState::SERVED;
-          slots[s_idx].state = SlotState::AVAILABLE;
+          requests[best_non_r].state = RequestState::PENDING;
+          slots[s_idx].state = SlotState::ASSIGNED;
           P.erase(find(P.begin(), P.end(), best_non_r));
-          A.erase(find(A.begin(), A.end(), s_idx));
           L.push_back({best_non_r, s_idx});
           weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(requests[best_non_r].id) + " assigned to Slot " + to_string(slots[s_idx].id));
         } else if (best_non_s != -1) {
-          slots[best_non_s].state = SlotState::AVAILABLE;
-          requests[r_idx].state = RequestState::PENDING;
-          A.push_back(best_non_s);
-          P.push_back(r_idx);
+          slots[best_non_s].state = SlotState::ASSIGNED;
+          requests[r_idx].state = RequestState::SERVED;
+          A.erase(find(A.begin(), A.end(), best_non_s));
+          L.push_back({r_idx, best_non_s});
           weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " assigned to Slot " + to_string(slots[best_non_s].id));
-          weekly_logs.push_back("  [t=" + to_string(t.first) + ", " + to_string(t.second) + "] Request " + to_string(r_idx) + " released from Slot " + to_string(slots[best_non_s].id));
+        } else {
+          slots[s_idx].state = SlotState::AVAILABLE;
+          requests[r_idx].state = RequestState::PENDING;
+          A.push_back(s_idx);
+          P.push_back(r_idx);
         }
       }
     }
