@@ -1,0 +1,57 @@
+
+TEST 1: all requests can be served
+PASSED
+
+TEST 2: greedy trap, DP must serve 2 not 1
+PASSED
+
+TEST 3: older medium request beats new high request
+PASSED
+
+TEST 4: no feasible slot because topic does not match
+PASSED
+
+TEST 5: preferred mentor increases benefit
+PASSED
+
+TEST 6: same fellow can receive multiple sessions
+PASSED
+
+TEST 7: canceled request is not assigned
+PASSED
+
+TEST 8: canceled slot cannot be used
+PASSED
+
+ALL TESTS PASSED
+
+=== EXTENDED TESTS ===
+
+TEST 9: higher topicMatch slot wins when both feasible
+PASSED  served=1 benefit=16
+
+TEST 10: lower-priority and no-feasible-slot in same week
+PASSED  served=1 lower_priority=1 no_feasible=2
+
+TEST 11: pending request persists across weeks then drains
+PASSED  w1_served=0 w2_served=1 w2_benefit=14 (age=1 contributed +2)
+
+TEST 12: persistently infeasible request across 3 weeks
+PASSED  request remained unserved for 3 weeks
+
+TEST 13: preferred mentor preference cannot override topic mismatch
+PASSED  fell back to compatible mentor, p=0
+
+TEST 14: empty required topics yields no feasible slot
+PASSED  empty topics treated as infeasible
+
+TEST 15: mentor with no topics is unmatchable
+PASSED  topicless mentor unused, 1 of 2 served
+
+TEST 16: dense bipartite, max matching = 4 of 5
+PASSED  served=4 benefit=54
+
+TEST 17: program-level accounting across 3 weeks
+PASSED  program_served=4 program_benefit=57
+
+=== ALL EXTENDED TESTS PASSED ===

@@ -1,946 +1,856 @@
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
-#include <limits>
-#include <cmath>
-#include <climits>
-#include <utility>
-#include <functional>
+#include <random>
+#include <cassert>
 
 using namespace std;
 
 struct Mentor {
-    string id;
-    unordered_set<string> specialties;
+    int id;
+    unordered_set<string> topics;
 };
 
 struct Slot {
     string id;
-    string mentorId;
+    int mentorId;
     string timeBlock;
+    bool canceled = false;
 };
 
 struct Request {
-    string fellowId;
-    vector<string> availableSlotIds;
-    string requestedTopic;
+    string id; // e.g. W1_R2
+    int fellowId;
+    vector<string> requiredTopics;
+    vector<string> acceptableTimes;
     string urgency;
-    long long timestamp;
+    int preferredMentor;
+    int week;
+    bool canceled = false;
 };
 
-struct WeeklyResult {
-    unordered_map<string, string> assignment;      // fellow_id -> slot_id
-    unordered_map<string, string> classification;  // fellow_id -> reason if unassigned
-    long long weeklyPenalty = 0;
+struct Assignment {
+    string requestId;
+    string slotId;
 };
 
-int urgencyWeight(const string& urgency) {
-    if (urgency == "blocker") return 3;
-    if (urgency == "normal") return 2;
-    if (urgency == "exploratory") return 1;
+struct Unserved {
+    string requestId;
+    string reason;
+};
 
-    return 0;
+struct DPResult {
+    int served = 0;
+    int benefit = 0;
+};
+
+struct WeekOutput {
+    vector<Assignment> assignments;
+    vector<Unserved> unserved;
+    int totalServed = 0;
+    int totalBenefit = 0;
+};
+
+const int ALPHA = 5;
+const int BETA = 2;
+const int GAMMA = 1;
+const int DELTA = 2;
+
+int urgencyValue(const string& urgency) {
+    if (urgency == "high") return 3;
+    if (urgency == "medium") return 2;
+    return 1;
 }
 
-int urgencyRank(const string& urgency) {
-    if (urgency == "blocker") return 3;
-    if (urgency == "normal") return 2;
-    if (urgency == "exploratory") return 1;
+vector<string> splitComma(const string& s) {
+    vector<string> result;
+    if (s == "\"\"" || s.empty()) return result;
 
-    return 0;
+    string current;
+    for (char c : s) {
+        if (c == ',') {
+            if (!current.empty()) result.push_back(current);
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+
+    if (!current.empty()) result.push_back(current);
+    return result;
 }
 
-long long skippedPenalty(const Request& request, long long starvationCount) {
-    long long w = urgencyWeight(request.urgency);
-    long long nextStarvation = starvationCount + 1;
-
-    return w * nextStarvation * nextStarvation;
+bool contains(const vector<string>& v, const string& x) {
+    for (const string& item : v) {
+        if (item == x) return true;
+    }
+    return false;
 }
 
-class ScarcityAwareGreedySolver {
+int topicMatch(const Request& r, const Slot& s, const unordered_map<int, Mentor>& mentors) {
+    auto it = mentors.find(s.mentorId);
+    if (it == mentors.end()) return 0;
+
+    int count = 0;
+    for (const string& topic : r.requiredTopics) {
+        if (it->second.topics.count(topic)) count++;
+    }
+
+    return count;
+}
+
+bool compatible(const Request& r, const Slot& s, const unordered_map<int, Mentor>& mentors) {
+    if (r.canceled || s.canceled) return false;
+    if (!contains(r.acceptableTimes, s.timeBlock)) return false;
+    return topicMatch(r, s, mentors) >= 1;
+}
+
+int benefit(const Request& r, const Slot& s, int currentWeek, const unordered_map<int, Mentor>& mentors) {
+    int u = urgencyValue(r.urgency);
+    int tm = topicMatch(r, s, mentors);
+    int p = (r.preferredMentor > 0 && r.preferredMentor == s.mentorId) ? 1 : 0;
+    int age = currentWeek - r.week;
+
+    return ALPHA * u + BETA * tm + GAMMA * p + DELTA * age;
+}
+
+bool better(const DPResult& a, const DPResult& b) {
+    if (a.served != b.served) return a.served > b.served;
+    return a.benefit > b.benefit;
+}
+
+class OptimalMatcher {
 private:
-    vector<string> fellowIds;
-    unordered_map<string, long long> starvation;
-    unordered_map<string, Mentor> mentors;
+    vector<Request> requests;
+    vector<Slot> slots;
+    unordered_map<int, Mentor> mentors;
+    int currentWeek;
+
+    vector<vector<bool>> seen;
+    vector<vector<DPResult>> memo;
+    vector<vector<int>> choice;
 
 public:
-    ScarcityAwareGreedySolver(
-        const vector<string>& fellowIds_,
-        const unordered_map<string, Mentor>& mentors_
+    OptimalMatcher(
+        const vector<Request>& reqs,
+        const vector<Slot>& sls,
+        const unordered_map<int, Mentor>& m,
+        int week
     ) {
-        fellowIds = fellowIds_;
-        mentors = mentors_;
+        requests = reqs;
+        slots = sls;
+        mentors = m;
+        currentWeek = week;
 
-        for (const string& fellowId : fellowIds) {
-            starvation[fellowId] = 0;
-        }
+        int R = requests.size();
+        int S = slots.size();
+        int masks = 1 << S;
+
+        seen.assign(R + 1, vector<bool>(masks, false));
+        memo.assign(R + 1, vector<DPResult>(masks));
+        choice.assign(R + 1, vector<int>(masks, -2));
     }
 
-    WeeklyResult solveWeek(
-        const vector<Slot>& slots,
-        const vector<Request>& requests
-    ) {
-        WeeklyResult result;
-
-        unordered_map<string, Slot> slotById;
-        unordered_set<string> freeSlots;
-
-        for (const Slot& slot : slots) {
-            slotById[slot.id] = slot;
-            freeSlots.insert(slot.id);
+    DPResult solve(int i, int mask) {
+        if (i == (int)requests.size()) {
+            return {0, 0};
         }
 
-        int R = static_cast<int>(requests.size());
+        if (seen[i][mask]) return memo[i][mask];
+        seen[i][mask] = true;
 
-        vector<unordered_set<string>> compatibleSlots(R);
-        vector<long long> penalty(R, 0);
-        vector<bool> infeasible(R, false);
-        vector<bool> assigned(R, false);
+        DPResult best = solve(i + 1, mask);
+        choice[i][mask] = -1; // skip request
 
-        for (int i = 0; i < R; i++) {
-            const Request& req = requests[i];
+        for (int j = 0; j < (int)slots.size(); j++) {
+            if (mask & (1 << j)) continue;
 
-            for (const string& slotId : req.availableSlotIds) {
-                if (slotById.find(slotId) == slotById.end()) {
-                    continue;
-                }
+            if (compatible(requests[i], slots[j], mentors)) {
+                DPResult candidate = solve(i + 1, mask | (1 << j));
+                candidate.served += 1;
+                candidate.benefit += benefit(requests[i], slots[j], currentWeek, mentors);
 
-                const Slot& slot = slotById[slotId];
-
-                if (mentors.find(slot.mentorId) == mentors.end()) {
-                    continue;
-                }
-
-                const Mentor& mentor = mentors[slot.mentorId];
-
-                if (mentor.specialties.find(req.requestedTopic) != mentor.specialties.end()) {
-                    compatibleSlots[i].insert(slotId);
+                if (better(candidate, best)) {
+                    best = candidate;
+                    choice[i][mask] = j;
                 }
             }
-
-            if (compatibleSlots[i].empty()) {
-                infeasible[i] = true;
-            }
-
-            penalty[i] = skippedPenalty(req, starvation[req.fellowId]);
         }
 
-        auto currentFreeCompatibleCount = [&](int i) -> int {
-            int count = 0;
+        memo[i][mask] = best;
+        return best;
+    }
 
-            for (const string& slotId : compatibleSlots[i]) {
-                if (freeSlots.find(slotId) != freeSlots.end()) {
-                    count++;
-                }
+    WeekOutput buildOutput() {
+        DPResult optimal = solve(0, 0);
+
+        WeekOutput output;
+        output.totalServed = optimal.served;
+        output.totalBenefit = optimal.benefit;
+
+        int mask = 0;
+        unordered_set<string> servedRequests;
+
+        for (int i = 0; i < (int)requests.size(); i++) {
+            int ch = choice[i][mask];
+
+            if (ch >= 0) {
+                output.assignments.push_back({requests[i].id, slots[ch].id});
+                servedRequests.insert(requests[i].id);
+                mask |= (1 << ch);
             }
-
-            return count;
-        };
-
-        auto betterFellow = [&](int a, int b, const vector<int>& k) -> bool {
-            long long Pa = penalty[a];
-            long long Pb = penalty[b];
-
-            long long ka = k[a];
-            long long kb = k[b];
-
-            long double left = static_cast<long double>(Pa) * static_cast<long double>(kb);
-            long double right = static_cast<long double>(Pb) * static_cast<long double>(ka);
-
-            if (left != right) {
-                return left > right;
-            }
-
-            if (Pa != Pb) {
-                return Pa > Pb;
-            }
-
-            int ua = urgencyRank(requests[a].urgency);
-            int ub = urgencyRank(requests[b].urgency);
-
-            if (ua != ub) {
-                return ua > ub;
-            }
-
-            long long sa = starvation[requests[a].fellowId];
-            long long sb = starvation[requests[b].fellowId];
-
-            if (sa != sb) {
-                return sa > sb;
-            }
-
-            if (requests[a].timestamp != requests[b].timestamp) {
-                return requests[a].timestamp < requests[b].timestamp;
-            }
-
-            return requests[a].fellowId < requests[b].fellowId;
-        };
-
-        auto chooseLeastDamagingSlot = [&](int selected, const vector<int>& k) -> string {
-            string bestSlot = "";
-            long double bestHarm = numeric_limits<long double>::infinity();
-            int bestClaimants = INT_MAX;
-
-            for (const string& slotId : compatibleSlots[selected]) {
-                if (freeSlots.find(slotId) == freeSlots.end()) {
-                    continue;
-                }
-
-                long double harm = 0.0L;
-                int claimants = 0;
-
-                for (int j = 0; j < R; j++) {
-                    if (j == selected) {
-                        continue;
-                    }
-
-                    if (assigned[j] || infeasible[j]) {
-                        continue;
-                    }
-
-                    if (k[j] == 0) {
-                        continue;
-                    }
-
-                    if (compatibleSlots[j].find(slotId) != compatibleSlots[j].end()) {
-                        harm += static_cast<long double>(penalty[j]) / static_cast<long double>(k[j]);
-                        claimants++;
-                    }
-                }
-
-                bool better = false;
-
-                if (harm < bestHarm) {
-                    better = true;
-                } else if (fabsl(harm - bestHarm) <= 1e-18L) {
-                    if (claimants < bestClaimants) {
-                        better = true;
-                    } else if (claimants == bestClaimants) {
-                        if (bestSlot.empty() || slotId < bestSlot) {
-                            better = true;
-                        }
-                    }
-                }
-
-                if (better) {
-                    bestHarm = harm;
-                    bestClaimants = claimants;
-                    bestSlot = slotId;
-                }
-            }
-
-            return bestSlot;
-        };
-
-        while (true) {
-            vector<int> k(R, 0);
-
-            for (int i = 0; i < R; i++) {
-                if (!assigned[i] && !infeasible[i]) {
-                    k[i] = currentFreeCompatibleCount(i);
-                }
-            }
-
-            int best = -1;
-
-            for (int i = 0; i < R; i++) {
-                if (assigned[i] || infeasible[i]) {
-                    continue;
-                }
-
-                if (k[i] == 0) {
-                    continue;
-                }
-
-                if (best == -1 || betterFellow(i, best, k)) {
-                    best = i;
-                }
-            }
-
-            if (best == -1) {
-                break;
-            }
-
-            string slotToUse = chooseLeastDamagingSlot(best, k);
-
-            if (slotToUse.empty()) {
-                break;
-            }
-
-            assigned[best] = true;
-            freeSlots.erase(slotToUse);
-
-            result.assignment[requests[best].fellowId] = slotToUse;
         }
 
-        unordered_set<string> assignedFellows;
+        for (const Request& r : requests) {
+            if (servedRequests.count(r.id)) continue;
 
-        for (int i = 0; i < R; i++) {
-            const string& fellowId = requests[i].fellowId;
-
-            if (assigned[i]) {
-                assignedFellows.insert(fellowId);
+            if (r.canceled) {
+                output.unserved.push_back({r.id, "request canceled"});
                 continue;
             }
 
-            result.weeklyPenalty += penalty[i];
+            bool hasFeasibleSlot = false;
+            for (const Slot& s : slots) {
+                if (compatible(r, s, mentors)) {
+                    hasFeasibleSlot = true;
+                    break;
+                }
+            }
 
-            if (compatibleSlots[i].empty()) {
-                result.classification[fellowId] = "infeasibly_unserved";
+            if (hasFeasibleSlot) {
+                output.unserved.push_back({r.id, "lower priority"});
             } else {
-                bool hasFreeCompatibleSlot = false;
-
-                for (const string& slotId : compatibleSlots[i]) {
-                    if (freeSlots.find(slotId) != freeSlots.end()) {
-                        hasFreeCompatibleSlot = true;
-                        break;
-                    }
-                }
-
-                if (hasFreeCompatibleSlot) {
-                    result.classification[fellowId] = "algorithm_failure";
-                } else {
-                    result.classification[fellowId] = "competitively_unserved";
-                }
+                output.unserved.push_back({r.id, "no feasible slot"});
             }
         }
 
-        for (const string& fellowId : fellowIds) {
-            if (assignedFellows.find(fellowId) != assignedFellows.end()) {
-                starvation[fellowId] = 0;
-            } else {
-                starvation[fellowId]++;
-            }
-        }
-
-        return result;
-    }
-
-    long long getStarvation(const string& fellowId) const {
-        unordered_map<string, long long>::const_iterator it = starvation.find(fellowId);
-
-        if (it == starvation.end()) {
-            return 0;
-        }
-
-        return it->second;
+        return output;
     }
 };
 
-struct TestRunner {
-    int passed = 0;
-    int failed = 0;
-
-    void expect(bool condition, const string& message) {
-        if (condition) {
-            passed++;
-            cout << "[PASS] " << message << "\n";
-        } else {
-            failed++;
-            cout << "[FAIL] " << message << "\n";
-        }
-    }
-
-    void summary() const {
-        cout << "\n==============================\n";
-        cout << "Tests passed: " << passed << "\n";
-        cout << "Tests failed: " << failed << "\n";
-        cout << "==============================\n";
-    }
-};
-
-Mentor makeMentor(const string& id, const vector<string>& topics) {
-    Mentor mentor;
-    mentor.id = id;
-
-    for (const string& topic : topics) {
-        mentor.specialties.insert(topic);
-    }
-
-    return mentor;
-}
-
-Slot makeSlot(const string& id, const string& mentorId, const string& timeBlock) {
-    Slot slot;
-    slot.id = id;
-    slot.mentorId = mentorId;
-    slot.timeBlock = timeBlock;
-
-    return slot;
-}
-
-Request makeRequest(
-    const string& fellowId,
-    const vector<string>& availableSlots,
-    const string& topic,
-    const string& urgency,
-    long long timestamp
+WeekOutput solveWeek(
+    vector<Request>& pending,
+    vector<Slot> slots,
+    const unordered_map<int, Mentor>& mentors,
+    int currentWeek
 ) {
-    Request request;
-    request.fellowId = fellowId;
-    request.availableSlotIds = availableSlots;
-    request.requestedTopic = topic;
-    request.urgency = urgency;
-    request.timestamp = timestamp;
+    vector<Request> activeRequests;
+    vector<Request> canceledRequests;
 
-    return request;
-}
-
-unordered_map<string, Mentor> makeMentors(const vector<Mentor>& mentorList) {
-    unordered_map<string, Mentor> mentors;
-
-    for (const Mentor& mentor : mentorList) {
-        mentors[mentor.id] = mentor;
+    for (const Request& r : pending) {
+        if (r.canceled) canceledRequests.push_back(r);
+        else activeRequests.push_back(r);
     }
 
-    return mentors;
-}
-
-bool hasAssignment(const WeeklyResult& result, const string& fellowId) {
-    return result.assignment.find(fellowId) != result.assignment.end();
-}
-
-string assignmentOf(const WeeklyResult& result, const string& fellowId) {
-    unordered_map<string, string>::const_iterator it = result.assignment.find(fellowId);
-
-    if (it == result.assignment.end()) {
-        return "";
+    vector<Slot> activeSlots;
+    for (const Slot& s : slots) {
+        if (!s.canceled) activeSlots.push_back(s);
     }
 
-    return it->second;
-}
+    OptimalMatcher matcher(activeRequests, activeSlots, mentors, currentWeek);
+    WeekOutput output = matcher.buildOutput();
 
-string classificationOf(const WeeklyResult& result, const string& fellowId) {
-    unordered_map<string, string>::const_iterator it = result.classification.find(fellowId);
-
-    if (it == result.classification.end()) {
-        return "";
+    for (const Request& r : canceledRequests) {
+        output.unserved.push_back({r.id, "request canceled"});
     }
 
-    return it->second;
-}
+    unordered_set<string> served;
+    unordered_set<string> canceled;
 
-bool hasNoAlgorithmFailure(const WeeklyResult& result) {
-    for (
-        unordered_map<string, string>::const_iterator it = result.classification.begin();
-        it != result.classification.end();
-        ++it
-    ) {
-        if (it->second == "algorithm_failure") {
-            return false;
+    for (const Assignment& a : output.assignments) served.insert(a.requestId);
+    for (const Request& r : canceledRequests) canceled.insert(r.id);
+
+    vector<Request> newPending;
+    for (const Request& r : pending) {
+        if (!served.count(r.id) && !canceled.count(r.id)) {
+            newPending.push_back(r);
         }
     }
 
-    return true;
+    pending = newPending;
+    return output;
 }
 
-struct OptimalResult {
-    long long minPenalty = 0;
-    unordered_map<string, string> assignment;
-};
-
-unordered_map<string, long long> snapshotStarvation(
-    const ScarcityAwareGreedySolver& solver,
-    const vector<string>& fellowIds
-) {
-    unordered_map<string, long long> starvationMap;
-
-    for (const string& fellowId : fellowIds) {
-        starvationMap[fellowId] = solver.getStarvation(fellowId);
+void printWeekOutput(const WeekOutput& output) {
+    cout << "Assignments:\n";
+    for (const Assignment& a : output.assignments) {
+        cout << "  " << a.requestId << " -> " << a.slotId << "\n";
     }
 
-    return starvationMap;
-}
-
-OptimalResult exactOptimalForSmallWeek(
-    const vector<Slot>& slots,
-    const vector<Request>& requests,
-    const unordered_map<string, Mentor>& mentors,
-    const unordered_map<string, long long>& starvation
-) {
-    OptimalResult optimal;
-
-    unordered_map<string, Slot> slotById;
-
-    for (const Slot& slot : slots) {
-        slotById[slot.id] = slot;
+    cout << "Unserved:\n";
+    for (const Unserved& u : output.unserved) {
+        cout << "  " << u.requestId << ": " << u.reason << "\n";
     }
 
-    int R = static_cast<int>(requests.size());
+    cout << "Served = " << output.totalServed << "\n";
+    cout << "Benefit = " << output.totalBenefit << "\n";
+}
 
-    vector<vector<string>> compatibleSlots(R);
-    vector<long long> penalty(R, 0);
+void runTests() {
+    unordered_map<int, Mentor> mentors;
 
-    long long totalPenaltyIfNobodyAssigned = 0;
+    mentors[201] = {201, {"database", "python", "api"}};
+    mentors[202] = {202, {"networking"}};
 
-    for (int i = 0; i < R; i++) {
-        const Request& req = requests[i];
+    {
+        cout << "\nTEST 1: all requests can be served\n";
 
-        for (const string& slotId : req.availableSlotIds) {
-            if (slotById.find(slotId) == slotById.end()) {
-                continue;
-            }
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Mon10"}, "high", 0, 1},
+            {"W1_R2", 102, {"networking"}, {"Tue14"}, "medium", 0, 1}
+        };
 
-            const Slot& slot = slotById[slotId];
+        vector<Slot> slots = {
+            {"W1_S1", 201, "Mon10"},
+            {"W1_S2", 202, "Tue14"}
+        };
 
-            if (mentors.find(slot.mentorId) == mentors.end()) {
-                continue;
-            }
+        WeekOutput out = solveWeek(pending, slots, mentors, 1);
 
-            const Mentor& mentor = mentors.at(slot.mentorId);
+        assert(out.totalServed == 2);
+        assert(pending.empty());
 
-            if (mentor.specialties.find(req.requestedTopic) != mentor.specialties.end()) {
-                compatibleSlots[i].push_back(slotId);
-            }
-        }
-
-        long long currentStarvation = 0;
-
-        if (starvation.find(req.fellowId) != starvation.end()) {
-            currentStarvation = starvation.at(req.fellowId);
-        }
-
-        penalty[i] = skippedPenalty(req, currentStarvation);
-        totalPenaltyIfNobodyAssigned += penalty[i];
+        cout << "PASSED\n";
     }
 
-    long long bestSavedPenalty = -1;
+    {
+        cout << "\nTEST 2: greedy trap, DP must serve 2 not 1\n";
 
-    unordered_set<string> usedSlots;
-    unordered_map<string, string> currentAssignment;
-    unordered_map<string, string> bestAssignment;
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x"}};
 
-    auto dfs = [&](auto&& self, int index, long long savedPenalty) -> void {
-        if (index == R) {
-            if (savedPenalty > bestSavedPenalty) {
-                bestSavedPenalty = savedPenalty;
-                bestAssignment = currentAssignment;
-            }
+        vector<Request> pending = {
+            {"W1_R1", 1, {"x"}, {"A"}, "low", 0, 1},
+            {"W1_R2", 2, {"x"}, {"A", "B"}, "high", 0, 1}
+        };
 
-            return;
-        }
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A"},
+            {"W1_S2", 1, "B"}
+        };
 
-        self(self, index + 1, savedPenalty);
+        WeekOutput out = solveWeek(pending, slots, m, 1);
 
-        const Request& req = requests[index];
+        assert(out.totalServed == 2);
+        assert(pending.empty());
 
-        for (const string& slotId : compatibleSlots[index]) {
-            if (usedSlots.find(slotId) != usedSlots.end()) {
-                continue;
-            }
-
-            usedSlots.insert(slotId);
-            currentAssignment[req.fellowId] = slotId;
-
-            self(self, index + 1, savedPenalty + penalty[index]);
-
-            currentAssignment.erase(req.fellowId);
-            usedSlots.erase(slotId);
-        }
-    };
-
-    dfs(dfs, 0, 0);
-
-    optimal.minPenalty = totalPenaltyIfNobodyAssigned - bestSavedPenalty;
-    optimal.assignment = bestAssignment;
-
-    return optimal;
-}
-
-bool withinTenPercent(long long greedyPenalty, long long optimalPenalty) {
-    if (optimalPenalty == 0) {
-        return greedyPenalty == 0;
+        cout << "PASSED\n";
     }
 
-    return greedyPenalty * 100 <= optimalPenalty * 110;
-}
+    {
+        cout << "\nTEST 3: older medium request beats new high request\n";
 
-void testAllFeasibleAssigned(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"}),
-        makeMentor("M2", vector<string>{"ai"})
-    });
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x"}};
 
-    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2"}, mentors);
+        vector<Request> pending = {
+            {"W1_R1", 1, {"x"}, {"A"}, "medium", 0, 1},
+            {"W6_R1", 2, {"x"}, {"A"}, "high", 0, 6}
+        };
 
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M2", "Tue9"));
+        vector<Slot> slots = {
+            {"W6_S1", 1, "A"}
+        };
 
-    vector<Request> requests;
-    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "cpp", "blocker", 10));
-    requests.push_back(makeRequest("F2", vector<string>{"S2"}, "ai", "normal", 20));
+        WeekOutput out = solveWeek(pending, slots, m, 6);
 
-    WeeklyResult result = solver.solveWeek(slots, requests);
+        assert(out.totalServed == 1);
+        assert(out.assignments[0].requestId == "W1_R1");
 
-    test.expect(assignmentOf(result, "F1") == "S1", "all feasible: F1 gets S1");
-    test.expect(assignmentOf(result, "F2") == "S2", "all feasible: F2 gets S2");
-    test.expect(result.classification.empty(), "all feasible: no unserved fellows");
-    test.expect(result.weeklyPenalty == 0, "all feasible: weekly penalty is 0");
-    test.expect(solver.getStarvation("F1") == 0, "all feasible: F1 starvation resets to 0");
-    test.expect(solver.getStarvation("F2") == 0, "all feasible: F2 starvation resets to 0");
-}
-
-void testInfeasibleRequests(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"}),
-        makeMentor("M2", vector<string>{"ai"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2", "F3"}, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M2", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "ai", "normal", 10));
-    requests.push_back(makeRequest("F2", vector<string>{"Missing"}, "cpp", "blocker", 20));
-    requests.push_back(makeRequest("F3", vector<string>{"S1"}, "security", "exploratory", 30));
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(result.assignment.empty(), "infeasible: no assignments are produced");
-    test.expect(classificationOf(result, "F1") == "infeasibly_unserved", "infeasible: F1 topic mismatch classified correctly");
-    test.expect(classificationOf(result, "F2") == "infeasibly_unserved", "infeasible: F2 missing slot classified correctly");
-    test.expect(classificationOf(result, "F3") == "infeasibly_unserved", "infeasible: F3 uncovered topic classified correctly");
-    test.expect(result.weeklyPenalty == 6, "infeasible: penalty is 2 + 3 + 1 = 6");
-    test.expect(hasNoAlgorithmFailure(result), "infeasible: no algorithm failure is reported");
-}
-
-void testTopicBottleneckCapacity(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2", "F3"}, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M1", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("F1", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
-    requests.push_back(makeRequest("F2", vector<string>{"S1", "S2"}, "cpp", "normal", 20));
-    requests.push_back(makeRequest("F3", vector<string>{"S1", "S2"}, "cpp", "exploratory", 30));
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(hasAssignment(result, "F1"), "bottleneck: highest penalty fellow F1 is assigned");
-    test.expect(hasAssignment(result, "F2"), "bottleneck: second-highest penalty fellow F2 is assigned");
-    test.expect(!hasAssignment(result, "F3"), "bottleneck: lowest penalty fellow F3 is unassigned");
-    test.expect(classificationOf(result, "F3") == "competitively_unserved", "bottleneck: F3 is competitively unserved");
-    test.expect(result.weeklyPenalty == 1, "bottleneck: penalty is only F3's skipped penalty = 1");
-    test.expect(hasNoAlgorithmFailure(result), "bottleneck: no algorithm failure is reported");
-}
-
-void testStarvationRescueBeatsUrgency(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"A", "B"}, mentors);
-
-    vector<Slot> prepSlots;
-    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
-
-    vector<Request> prepRequests;
-    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "blocker", 1));
-
-    solver.solveWeek(prepSlots, prepRequests);
-    solver.solveWeek(prepSlots, prepRequests);
-    solver.solveWeek(prepSlots, prepRequests);
-
-    test.expect(solver.getStarvation("A") == 3, "starvation rescue setup: A has starvation 3");
-    test.expect(solver.getStarvation("B") == 0, "starvation rescue setup: B has starvation 0");
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("A", vector<string>{"S1"}, "cpp", "exploratory", 20));
-    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "blocker", 10));
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(assignmentOf(result, "A") == "S1", "starvation rescue: starved exploratory A beats blocker B");
-    test.expect(classificationOf(result, "B") == "competitively_unserved", "starvation rescue: B is competitively unserved");
-    test.expect(result.weeklyPenalty == 3, "starvation rescue: penalty is B's skipped blocker penalty = 3");
-    test.expect(solver.getStarvation("A") == 0, "starvation rescue: A starvation resets");
-    test.expect(solver.getStarvation("B") == 1, "starvation rescue: B starvation increments");
-}
-
-void testLeastDamagingSlotChoice(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"A", "B"}, mentors);
-
-    vector<Slot> prepSlots;
-    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
-
-    vector<Request> prepRequests;
-    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "normal", 1));
-
-    solver.solveWeek(prepSlots, prepRequests);
-    solver.solveWeek(prepSlots, prepRequests);
-
-    test.expect(solver.getStarvation("A") == 2, "least damaging setup: A has starvation 2");
-    test.expect(solver.getStarvation("B") == 0, "least damaging setup: B has starvation 0");
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M1", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("A", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
-    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "normal", 20));
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(assignmentOf(result, "A") == "S2", "least damaging: A avoids B's only slot and takes S2");
-    test.expect(assignmentOf(result, "B") == "S1", "least damaging: B still gets its only slot S1");
-    test.expect(result.weeklyPenalty == 0, "least damaging: both fellows assigned, penalty 0");
-    test.expect(hasNoAlgorithmFailure(result), "least damaging: no algorithm failure is reported");
-}
-
-void testTimestampTieBreaker(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"Early", "Late"}, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("Late", vector<string>{"S1"}, "cpp", "normal", 20));
-    requests.push_back(makeRequest("Early", vector<string>{"S1"}, "cpp", "normal", 10));
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(assignmentOf(result, "Early") == "S1", "tie breaker: earlier timestamp wins");
-    test.expect(classificationOf(result, "Late") == "competitively_unserved", "tie breaker: later timestamp is competitively unserved");
-    test.expect(result.weeklyPenalty == 2, "tie breaker: skipped normal fellow penalty is 2");
-}
-
-void testNoRequestsWeek(TestRunner& test) {
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(vector<string>{"F1", "F2"}, mentors);
-
-    vector<Slot> slots;
-    vector<Request> requests;
-
-    WeeklyResult result = solver.solveWeek(slots, requests);
-
-    test.expect(result.assignment.empty(), "no requests: no assignments");
-    test.expect(result.classification.empty(), "no requests: no unserved request classifications");
-    test.expect(result.weeklyPenalty == 0, "no requests: weekly penalty is 0");
-    test.expect(solver.getStarvation("F1") == 1, "no requests: F1 starvation increments because not assigned");
-    test.expect(solver.getStarvation("F2") == 1, "no requests: F2 starvation increments because not assigned");
-}
-
-void testGreedyMatchesOptimalOnEasyCase(TestRunner& test) {
-    vector<string> fellows;
-    fellows.push_back("F1");
-    fellows.push_back("F2");
-
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"}),
-        makeMentor("M2", vector<string>{"ai"})
-    });
-
-    ScarcityAwareGreedySolver solver(fellows, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M2", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("F1", vector<string>{"S1"}, "cpp", "blocker", 10));
-    requests.push_back(makeRequest("F2", vector<string>{"S2"}, "ai", "normal", 20));
-
-    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
-
-    WeeklyResult greedy = solver.solveWeek(slots, requests);
-    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
-
-    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality easy: greedy penalty matches exact optimum");
-    test.expect(greedy.weeklyPenalty == 0, "optimality easy: optimal penalty is 0");
-    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality easy: greedy is within 10%");
-}
-
-void testGreedyMatchesOptimalOnSimpleBottleneck(TestRunner& test) {
-    vector<string> fellows;
-    fellows.push_back("F1");
-    fellows.push_back("F2");
-    fellows.push_back("F3");
-
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(fellows, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M1", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("F1", vector<string>{"S1", "S2"}, "cpp", "blocker", 10));
-    requests.push_back(makeRequest("F2", vector<string>{"S1", "S2"}, "cpp", "normal", 20));
-    requests.push_back(makeRequest("F3", vector<string>{"S1", "S2"}, "cpp", "exploratory", 30));
-
-    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
-
-    WeeklyResult greedy = solver.solveWeek(slots, requests);
-    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
-
-    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality bottleneck: greedy matches exact optimum");
-    test.expect(greedy.weeklyPenalty == 1, "optimality bottleneck: only exploratory fellow is skipped");
-    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality bottleneck: greedy is within 10%");
-}
-
-void testGreedyMatchesOptimalOnStarvationRescue(TestRunner& test) {
-    vector<string> fellows;
-    fellows.push_back("A");
-    fellows.push_back("B");
-
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(fellows, mentors);
-
-    vector<Slot> prepSlots;
-    prepSlots.push_back(makeSlot("PB", "M1", "Prep"));
-
-    vector<Request> prepRequests;
-    prepRequests.push_back(makeRequest("B", vector<string>{"PB"}, "cpp", "blocker", 1));
-
-    solver.solveWeek(prepSlots, prepRequests);
-    solver.solveWeek(prepSlots, prepRequests);
-    solver.solveWeek(prepSlots, prepRequests);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("A", vector<string>{"S1"}, "cpp", "exploratory", 20));
-    requests.push_back(makeRequest("B", vector<string>{"S1"}, "cpp", "blocker", 10));
-
-    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
-
-    WeeklyResult greedy = solver.solveWeek(slots, requests);
-    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
-
-    test.expect(greedy.weeklyPenalty == optimal.minPenalty, "optimality starvation rescue: greedy matches exact optimum");
-    test.expect(assignmentOf(greedy, "A") == "S1", "optimality starvation rescue: A is assigned despite lower urgency");
-    test.expect(greedy.weeklyPenalty == 3, "optimality starvation rescue: skipping B costs 3");
-    test.expect(withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "optimality starvation rescue: greedy is within 10%");
-}
-
-void testGreedyKnownFailureCase(TestRunner& test) {
-    vector<string> fellows;
-    fellows.push_back("Scarce");
-    fellows.push_back("BlockerA");
-    fellows.push_back("BlockerB");
-
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"cpp"})
-    });
-
-    ScarcityAwareGreedySolver solver(fellows, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Mon9"));
-    slots.push_back(makeSlot("S2", "M1", "Tue9"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("Scarce", vector<string>{"S1"}, "cpp", "normal", 10));
-    requests.push_back(makeRequest("BlockerA", vector<string>{"S1", "S2"}, "cpp", "blocker", 20));
-    requests.push_back(makeRequest("BlockerB", vector<string>{"S1", "S2"}, "cpp", "blocker", 30));
-
-    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
-
-    WeeklyResult greedy = solver.solveWeek(slots, requests);
-    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
-
-    test.expect(greedy.weeklyPenalty == 3, "known failure: greedy penalty is 3");
-    test.expect(optimal.minPenalty == 2, "known failure: exact optimal penalty is 2");
-    test.expect(greedy.weeklyPenalty > optimal.minPenalty, "known failure: greedy is worse than optimal");
-    test.expect(!withinTenPercent(greedy.weeklyPenalty, optimal.minPenalty), "known failure: greedy is NOT within 10% of optimum");
-    test.expect(assignmentOf(greedy, "Scarce") == "S1", "known failure: greedy assigns the scarce low-penalty fellow");
-}
-
-void testOracleDetectsNonOptimalGreedy(TestRunner& test) {
-    vector<string> fellows;
-    fellows.push_back("LowValueSingleOption");
-    fellows.push_back("HighValueFlexible1");
-    fellows.push_back("HighValueFlexible2");
-
-    unordered_map<string, Mentor> mentors = makeMentors(vector<Mentor>{
-        makeMentor("M1", vector<string>{"systems"})
-    });
-
-    ScarcityAwareGreedySolver solver(fellows, mentors);
-
-    vector<Slot> slots;
-    slots.push_back(makeSlot("S1", "M1", "Slot1"));
-    slots.push_back(makeSlot("S2", "M1", "Slot2"));
-
-    vector<Request> requests;
-    requests.push_back(makeRequest("LowValueSingleOption", vector<string>{"S1"}, "systems", "normal", 1));
-    requests.push_back(makeRequest("HighValueFlexible1", vector<string>{"S1", "S2"}, "systems", "blocker", 2));
-    requests.push_back(makeRequest("HighValueFlexible2", vector<string>{"S1", "S2"}, "systems", "blocker", 3));
-
-    unordered_map<string, long long> starvationBefore = snapshotStarvation(solver, fellows);
-
-    WeeklyResult greedy = solver.solveWeek(slots, requests);
-    OptimalResult optimal = exactOptimalForSmallWeek(slots, requests, mentors, starvationBefore);
-
-    long long greedyGap = greedy.weeklyPenalty - optimal.minPenalty;
-
-    test.expect(greedyGap == 1, "oracle non-optimal: greedy is worse by exactly 1 penalty point");
-    test.expect(greedy.weeklyPenalty == 3, "oracle non-optimal: greedy penalty is 3");
-    test.expect(optimal.minPenalty == 2, "oracle non-optimal: optimal penalty is 2");
-}
-
-void runAllTests() {
-    TestRunner test;
-
-    testAllFeasibleAssigned(test);
-    testInfeasibleRequests(test);
-    testTopicBottleneckCapacity(test);
-    testStarvationRescueBeatsUrgency(test);
-    testLeastDamagingSlotChoice(test);
-    testTimestampTieBreaker(test);
-    testNoRequestsWeek(test);
-
-    testGreedyMatchesOptimalOnEasyCase(test);
-    testGreedyMatchesOptimalOnSimpleBottleneck(test);
-    testGreedyMatchesOptimalOnStarvationRescue(test);
-    testGreedyKnownFailureCase(test);
-    testOracleDetectsNonOptimalGreedy(test);
-
-    test.summary();
-
-    if (test.failed == 0) {
-        cout << "All self-checking tests passed.\n";
-    } else {
-        cout << "Some tests failed. Review the failed cases above.\n";
+        cout << "PASSED\n";
     }
+
+    {
+        cout << "\nTEST 4: no feasible slot because topic does not match\n";
+
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"math"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 1, {"python"}, {"A"}, "high", 0, 1}
+        };
+
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 0);
+        assert(out.unserved[0].reason == "no feasible slot");
+
+        cout << "PASSED\n";
+    }
+
+    {
+        cout << "\nTEST 5: preferred mentor increases benefit\n";
+
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x"}};
+        m[2] = {2, {"x"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 1, {"x"}, {"A"}, "medium", 2, 1}
+        };
+
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A"},
+            {"W1_S2", 2, "A"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 1);
+        assert(out.assignments[0].slotId == "W1_S2");
+
+        cout << "PASSED\n";
+    }
+
+    {
+        cout << "\nTEST 6: same fellow can receive multiple sessions\n";
+
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x", "y"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"x"}, {"A"}, "high", 0, 1},
+            {"W1_R2", 101, {"y"}, {"B"}, "high", 0, 1}
+        };
+
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A"},
+            {"W1_S2", 1, "B"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 2);
+        assert(pending.empty());
+
+        cout << "PASSED\n";
+    }
+
+    {
+        cout << "\nTEST 7: canceled request is not assigned\n";
+
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 1, {"x"}, {"A"}, "high", 0, 1, true}
+        };
+
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 0);
+        assert(out.unserved[0].reason == "request canceled");
+
+        cout << "PASSED\n";
+    }
+
+    {
+        cout << "\nTEST 8: canceled slot cannot be used\n";
+
+        unordered_map<int, Mentor> m;
+        m[1] = {1, {"x"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 1, {"x"}, {"A"}, "high", 0, 1}
+        };
+
+        vector<Slot> slots = {
+            {"W1_S1", 1, "A", true}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 0);
+        assert(out.unserved[0].reason == "no feasible slot");
+
+        cout << "PASSED\n";
+    }
+
+    cout << "\nALL TESTS PASSED\n";
+}
+
+
+
+// ============================================================
+// EXTENDED TEST SUITE
+// Drop this anywhere after solveWeek() / printWeekOutput().
+// Then call runExtendedTests() from main().
+// ============================================================
+
+int countReason(const WeekOutput& out, const string& reason) {
+    int c = 0;
+    for (const auto& u : out.unserved) if (u.reason == reason) c++;
+    return c;
+}
+
+string assignedSlot(const WeekOutput& out, const string& reqId) {
+    for (const auto& a : out.assignments) {
+        if (a.requestId == reqId) return a.slotId;
+    }
+    return "";
+}
+
+bool isServed(const WeekOutput& out, const string& reqId) {
+    return !assignedSlot(out, reqId).empty();
+}
+
+void runExtendedTests() {
+    cout << "\n=== EXTENDED TESTS ===\n";
+
+    // ------------------------------------------------------------
+    // TEST 9: Topic-match score drives slot choice.
+    // One request feasible with two slots; the one giving higher
+    // topicMatch (and thus higher benefit) must be picked.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 9: higher topicMatch slot wins when both feasible\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database", "python", "api"}};
+        m[202] = {202, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database", "python", "api"}, {"Mon10"}, "medium", 0, 1}
+        };
+
+        vector<Slot> slots = {
+            {"S_201", 201, "Mon10"},
+            {"S_202", 202, "Mon10"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        // 201 gives tm=3, benefit = 5*2 + 2*3 = 16
+        // 202 gives tm=1, benefit = 5*2 + 2*1 = 12
+        assert(out.totalServed == 1);
+        assert(out.totalBenefit == 16);
+        assert(assignedSlot(out, "W1_R1") == "S_201");
+
+        cout << "PASSED  served=" << out.totalServed
+             << " benefit=" << out.totalBenefit << "\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 10: Both unserved reasons present in one week.
+    // One served, one bumped to "lower priority", two infeasible.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 10: lower-priority and no-feasible-slot in same week\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Mon10"}, "high",   0, 1},  // served
+            {"W1_R2", 102, {"database"}, {"Mon10"}, "medium", 0, 1},  // lower priority
+            {"W1_R3", 103, {"python"},   {"Mon10"}, "high",   0, 1},  // no feasible slot (topic)
+            {"W1_R4", 104, {"database"}, {"Wed09"}, "high",   0, 1}   // no feasible slot (time)
+        };
+
+        vector<Slot> slots = {
+            {"S_201_Mon10", 201, "Mon10"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 1);
+        assert(isServed(out, "W1_R1"));
+        assert(countReason(out, "lower priority") == 1);
+        assert(countReason(out, "no feasible slot") == 2);
+        assert(out.totalBenefit == 17);  // 5*3 + 2*1
+
+        cout << "PASSED  served=" << out.totalServed
+             << " lower_priority=" << countReason(out, "lower priority")
+             << " no_feasible=" << countReason(out, "no feasible slot") << "\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 11: Backlog persists then drains. Verifies age delta
+    // is applied correctly when a request waits a week before
+    // being served.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 11: pending request persists across weeks then drains\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Mon10"}, "medium", 0, 1}
+        };
+
+        // Week 1: no slots offered
+        WeekOutput w1 = solveWeek(pending, {}, m, 1);
+        assert(w1.totalServed == 0);
+        assert(w1.unserved.size() == 1);
+        assert(w1.unserved[0].reason == "no feasible slot");
+        assert(pending.size() == 1);
+
+        // Week 2: slot arrives
+        vector<Slot> slots2 = {{"S1", 201, "Mon10"}};
+        WeekOutput w2 = solveWeek(pending, slots2, m, 2);
+
+        // age = 2-1 = 1: benefit = 5*2 + 2*1 + 0 + 2*1 = 14
+        assert(w2.totalServed == 1);
+        assert(w2.totalBenefit == 14);
+        assert(isServed(w2, "W1_R1"));
+        assert(pending.empty());
+
+        cout << "PASSED  w1_served=0 w2_served=1 w2_benefit="
+             << w2.totalBenefit << " (age=1 contributed +2)\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 12: Persistently infeasible request stays unserved
+    // for multiple weeks with the correct reason every week.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 12: persistently infeasible request across 3 weeks\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Fri17"}, "low", 0, 1}
+        };
+
+        WeekOutput w1 = solveWeek(pending, {{"S1", 201, "Mon10"}}, m, 1);
+        assert(w1.totalServed == 0);
+        assert(w1.unserved[0].reason == "no feasible slot");
+        assert(pending.size() == 1);
+
+        WeekOutput w2 = solveWeek(pending, {{"S2", 201, "Tue14"}}, m, 2);
+        assert(w2.totalServed == 0);
+        assert(w2.unserved[0].reason == "no feasible slot");
+        assert(pending.size() == 1);
+
+        WeekOutput w3 = solveWeek(pending, {{"S3", 201, "Wed09"}}, m, 3);
+        assert(w3.totalServed == 0);
+        assert(w3.unserved[0].reason == "no feasible slot");
+        assert(pending.size() == 1);
+
+        cout << "PASSED  request remained unserved for 3 weeks\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 13: Preferred mentor preference cannot override
+    // compatibility. Preferred mentor lacks the topic, so the
+    // request falls back to the only compatible mentor with p=0.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 13: preferred mentor preference cannot override topic mismatch\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"python"}};       // preferred, but wrong topic
+        m[202] = {202, {"database"}};      // compatible
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Mon10"}, "high", 201, 1}
+        };
+
+        vector<Slot> slots = {
+            {"S_201", 201, "Mon10"},
+            {"S_202", 202, "Mon10"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 1);
+        assert(assignedSlot(out, "W1_R1") == "S_202");
+        // p=0 since 202 != preferred 201
+        assert(out.totalBenefit == 17);  // 5*3 + 2*1 + 0 + 0
+
+        cout << "PASSED  fell back to compatible mentor, p=0\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 14: Empty required topics list. |empty intersect *| = 0,
+    // and score 0 makes the pair infeasible per spec.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 14: empty required topics yields no feasible slot\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {}, {"Mon10"}, "high", 0, 1}
+        };
+
+        vector<Slot> slots = {{"S1", 201, "Mon10"}};
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 0);
+        assert(out.unserved[0].reason == "no feasible slot");
+
+        cout << "PASSED  empty topics treated as infeasible\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 15: Mentor with no topics is unmatchable.
+    // Any pair (request, slot) where the slot's mentor has no
+    // topics has topicMatch=0, so the slot is effectively dead.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 15: mentor with no topics is unmatchable\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {}};                // empty topic set
+        m[202] = {202, {"database"}};
+
+        vector<Request> pending = {
+            {"W1_R1", 101, {"database"}, {"Mon10"}, "high", 0, 1},
+            {"W1_R2", 102, {"database"}, {"Mon10"}, "high", 0, 1}
+        };
+
+        vector<Slot> slots = {
+            {"S_201", 201, "Mon10"},   // dead slot
+            {"S_202", 202, "Mon10"}    // only usable slot
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        // Only one slot truly usable, so only one served
+        assert(out.totalServed == 1);
+        assert(countReason(out, "lower priority") == 1);
+
+        string servedSlot;
+        for (const auto& a : out.assignments) servedSlot = a.slotId;
+        assert(servedSlot == "S_202");
+
+        cout << "PASSED  topicless mentor unused, 1 of 2 served\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 16: Dense bipartite case. Five requests, four slots.
+    // R4 has only one feasible slot (S_201_Tue14), forcing R3 to
+    // take S_203_Tue14. R2 and R5 contest S_202_Mon10. Max
+    // matching is 4; a greedy that doesn't respect the forced
+    // edge would get only 3.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 16: dense bipartite, max matching = 4 of 5\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database", "python"}};
+        m[202] = {202, {"networking", "api"}};
+        m[203] = {203, {"database", "api"}};
+
+        vector<Request> pending = {
+            {"R1", 101, {"database"},   {"Mon10"},  "high",   0, 1}, // only S_201_Mon10
+            {"R2", 102, {"api"},        {"Mon10"},  "high",   0, 1}, // only S_202_Mon10
+            {"R3", 103, {"database"},   {"Tue14"},  "medium", 0, 1}, // S_201_Tue14 or S_203_Tue14
+            {"R4", 104, {"python"},     {"Tue14"},  "low",  201, 1}, // only S_201_Tue14
+            {"R5", 105, {"networking"}, {"Mon10"},  "high",   0, 1}  // only S_202_Mon10
+        };
+
+        vector<Slot> slots = {
+            {"S_201_Mon10", 201, "Mon10"},
+            {"S_202_Mon10", 202, "Mon10"},
+            {"S_203_Tue14", 203, "Tue14"},
+            {"S_201_Tue14", 201, "Tue14"}
+        };
+
+        WeekOutput out = solveWeek(pending, slots, m, 1);
+
+        assert(out.totalServed == 4);
+        assert(isServed(out, "R1"));
+        assert(isServed(out, "R3"));
+        assert(isServed(out, "R4"));
+        assert(isServed(out, "R2") != isServed(out, "R5"));    // exactly one
+        assert(assignedSlot(out, "R4") == "S_201_Tue14");      // R4's only option
+
+        cout << "PASSED  served=" << out.totalServed
+             << " benefit=" << out.totalBenefit << "\n";
+    }
+
+    // ------------------------------------------------------------
+    // TEST 17: End-of-program accounting across multiple weeks.
+    // Verifies that totals stay consistent as a request lingers
+    // for two weeks then gets served, with the correct age bonus.
+    // ------------------------------------------------------------
+    {
+        cout << "\nTEST 17: program-level accounting across 3 weeks\n";
+
+        unordered_map<int, Mentor> m;
+        m[201] = {201, {"database", "python"}};
+        m[202] = {202, {"networking", "api"}};
+
+        vector<Request> pending;
+        int totalServed = 0;
+        int totalBenefit = 0;
+
+        // Week 1
+        pending.push_back({"W1_R1", 101, {"database"},   {"Mon10"}, "high",   0, 1});
+        pending.push_back({"W1_R2", 102, {"networking"}, {"Tue14"}, "medium", 0, 1});
+        pending.push_back({"W1_R3", 103, {"api"},        {"Wed09"}, "low",    0, 1}); // infeasible
+
+        vector<Slot> w1_slots = {
+            {"W1_S1", 201, "Mon10"},
+            {"W1_S2", 202, "Tue14"}
+        };
+
+        WeekOutput w1 = solveWeek(pending, w1_slots, m, 1);
+        totalServed += w1.totalServed;
+        totalBenefit += w1.totalBenefit;
+
+        assert(w1.totalServed == 2);
+        assert(w1.totalBenefit == 29);            // 17 + 12
+        assert(pending.size() == 1);               // W1_R3 carries over
+
+        // Week 2: still no Wed09 slot
+        pending.push_back({"W2_R1", 104, {"python"}, {"Mon10"}, "high", 0, 2});
+
+        vector<Slot> w2_slots = {{"W2_S1", 201, "Mon10"}};
+
+        WeekOutput w2 = solveWeek(pending, w2_slots, m, 2);
+        totalServed += w2.totalServed;
+        totalBenefit += w2.totalBenefit;
+
+        assert(w2.totalServed == 1);
+        assert(isServed(w2, "W2_R1"));
+        assert(w2.totalBenefit == 17);
+        assert(pending.size() == 1);               // W1_R3 still hanging
+
+        // Week 3: finally a Wed09 slot with api topic
+        vector<Slot> w3_slots = {{"W3_S1", 202, "Wed09"}};
+
+        WeekOutput w3 = solveWeek(pending, w3_slots, m, 3);
+        totalServed += w3.totalServed;
+        totalBenefit += w3.totalBenefit;
+
+        // W1_R3 age = 3-1 = 2: benefit = 5*1 + 2*1 + 0 + 2*2 = 11
+        assert(w3.totalServed == 1);
+        assert(isServed(w3, "W1_R3"));
+        assert(w3.totalBenefit == 11);
+        assert(pending.empty());
+
+        assert(totalServed == 4);
+        assert(totalBenefit == 57);                // 29 + 17 + 11
+
+        cout << "PASSED  program_served=" << totalServed
+             << " program_benefit=" << totalBenefit << "\n";
+    }
+
+    cout << "\n=== ALL EXTENDED TESTS PASSED ===\n";
 }
 
 int main() {
-    runAllTests();
+    runTests();
+    runExtendedTests();
+
     return 0;
 }
