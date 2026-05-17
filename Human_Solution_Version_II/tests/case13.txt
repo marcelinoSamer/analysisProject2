@@ -29,7 +29,7 @@ WEEK 3
 
 0
 1
-101:Mon2
+1:Mon2
 
 WEEK 4
 0
@@ -42,7 +42,7 @@ WEEK 4
 
 ###
 
-Assignment => Rescheduling => Cancell assignment
+Assignment => Rescheduling => Cancel assignment
 => Reschedule again => Reassign => Cancel request
 
 ###
